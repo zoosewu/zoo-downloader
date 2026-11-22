@@ -35,6 +35,7 @@ impl From<CoreError> for CommandError {
             CoreError::NotFound => "notFound",
             CoreError::Invalid(_) => "invalid",
             CoreError::Resolve { .. } => "resolve",
+            CoreError::SiteLimit { .. } => "siteLimit",
             CoreError::SourceChanged(_) => "sourceChanged",
             CoreError::InsufficientSpace { .. } => "insufficientSpace",
         };

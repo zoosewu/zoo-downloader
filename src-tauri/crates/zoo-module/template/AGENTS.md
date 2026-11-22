@@ -142,10 +142,13 @@ app decrypt as it downloads; never download the file yourself.
 The host's `crypto.subtle` only hashes: bundle a small AES library for anything the module must
 decrypt itself (names, keys). Needs `"apiVersion": 4`.
 
-**Transfer quotas** (HTTP 509 when the site's free allowance is used up): the app asks `resolve`
-again when the download gets 509, and resumes where it stopped. Have `resolve` check whether the
-site serves now (a one-byte `Range` request to the link) and `zoo.wait` out what the site says is
-left before returning the link.
+**Download limits and quotas** ("one free download every 2 hours", a used-up transfer quota):
+`throw zoo.fail('…', { retryAfter: seconds })` with what the site says is left. Do not
+`zoo.wait` for it: the app waits without holding a download slot, keeps the site's other
+downloads from starting meanwhile, and then tries them in queue order. When a download gets HTTP
+509 (MEGA's quota running out midway), the app asks `resolve` again and resumes where it stopped;
+check whether the site serves now (a one-byte `Range` request to the link) and throw with
+`retryAfter` if not. Needs `"apiVersion": 5`. `zoo.wait` is for short countdowns (seconds).
 
 **Pretend to be the site's own downloader.** Some sites only serve their own client. Set its
 User-Agent on `fetch` and in the result:

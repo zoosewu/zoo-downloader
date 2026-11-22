@@ -152,7 +152,14 @@ pub enum ModuleError {
     Load { message: String, hint: Option<String> },
     /// `resolve` threw, rejected, or returned something invalid.
     #[error("{message}")]
-    Script { message: String, hint: Option<String>, stack: Option<String> },
+    /// `retry_after`: the site refuses for that many seconds (API level 5, `zoo.fail`).
+    Script {
+        message: String,
+        hint: Option<String>,
+        stack: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_after: Option<u64>,
+    },
     #[error("module exceeded its {limit_ms} ms time limit")]
     Timeout { limit_ms: u64 },
     #[error("module exceeded its {limit_mb} MB memory limit")]
@@ -298,7 +305,7 @@ mod tests {
             },
             Reply::Failed {
                 id: 3,
-                error: ModuleError::Script { message: "m".into(), hint: Some("h".into()), stack: None },
+                error: ModuleError::Script { message: "m".into(), hint: Some("h".into()), stack: None, retry_after: None },
             },
         ];
         for reply in &replies {

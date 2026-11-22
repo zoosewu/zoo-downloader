@@ -71,6 +71,8 @@
       "scheduledStart": "予定開始時刻",
       "notScheduled": "スケジュール未設定",
       "nextRetryAt": "次の自動再試行",
+      "nextTryAt": "次の試行",
+      "siteLimit": "サイトの制限",
       "module": "サイトモジュール",
       "directDownload": "直接ダウンロード",
       "pageUrl": "リンク元のページ",
@@ -114,6 +116,7 @@
       "otherUrl": "別の URL にする"
     },
     "retryPending": "再試行まで",
+    "siteLimit": "サイト制限待ち",
     "menu": {
       "restart": "最初からダウンロード",
       "categories": "カテゴリ",

@@ -177,7 +177,7 @@ fn schema_and_parser_agree() {
         ("long translated help", variant(&["permissions", "credentials"], Some(json!([{ "key": "t", "label": "T", "help": { "en": "x".repeat(301) } }]))), false),
         ("long module help", variant(&["credentialsHelp"], Some(json!("x".repeat(501)))), false),
         ("help page not https", variant(&["credentialsHelpUrl"], Some(json!("http://example.com/help"))), false),
-        ("api 5", variant(&["apiVersion"], Some(json!(5))), false),
+        ("api 6", variant(&["apiVersion"], Some(json!(6))), false),
         ("unknown field", variant(&["className"], Some(json!("X"))), false),
         ("uppercase id", variant(&["id"], Some(json!("Example"))), false),
         ("no id", variant(&["id"], None), false),

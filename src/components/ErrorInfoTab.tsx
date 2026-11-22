@@ -23,12 +23,14 @@ const ErrorInfoTab: React.FC<ErrorInfoTabProps> = ({ task }) => {
     );
   }
 
+  // The site said to wait (a free download limit): not a failure of the download.
+  const limited = task.error.kind === 'siteLimit';
   return (
     <Box sx={{ padding: 1.5 }}>
       <Stack spacing={2}>
-        <Alert severity="error" variant="outlined">
+        <Alert severity={limited ? 'warning' : 'error'} variant="outlined">
           <Typography variant="subtitle2" gutterBottom>
-            {t(`downloads.state.${task.state}`)}
+            {limited ? t('downloads.details.siteLimit') : t(`downloads.state.${task.state}`)}
           </Typography>
           <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {errorText(task.error, t)}
@@ -47,7 +49,7 @@ const ErrorInfoTab: React.FC<ErrorInfoTabProps> = ({ task }) => {
         {task.nextRetryAt && (
           <Box>
             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              {t('downloads.details.nextRetryAt')}
+              {t(limited ? 'downloads.details.nextTryAt' : 'downloads.details.nextRetryAt')}
             </Typography>
             <Typography variant="body2">{formatAbsoluteTime(task.nextRetryAt)}</Typography>
           </Box>

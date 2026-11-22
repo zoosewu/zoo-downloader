@@ -20,7 +20,7 @@ use crate::resolve::{self, Answers, Memory, Resolver};
 use crate::store::JsonStore;
 use crate::task::{AddRequest, Config, Event, Phase, ProgressTick, SegmentMap, StartMode, Task, TaskId, TaskState, TaskUpdate};
 use crate::transfer::{self, Ctx, Progress, TransferSpec};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -110,6 +110,7 @@ impl DownloadManager {
             job_tx,
             shutting_down: false,
             rev,
+            sites: HashMap::new(),
         };
         tokio::spawn(actor.run(cmd_rx, job_rx));
         Ok(Self { tx, events })
@@ -238,6 +239,18 @@ struct Job {
     part_path: PathBuf,
     stop: Option<Stop>,
     speed: SpeedMeter,
+    /// The site the task's URL belongs to (`Resolver::site`).
+    site: Option<String>,
+}
+
+/// What the actor knows about one site (`Resolver::site`): its downloads resolve one at a time,
+/// in queue order, and none start while the site refuses (`CoreError::SiteLimit`).
+#[derive(Default)]
+struct SiteGate {
+    /// The site refuses until then.
+    closed_until: Option<DateTime<Utc>>,
+    /// The task resolving now; the site's next waits for it to start transferring or end.
+    resolving: Option<TaskId>,
 }
 
 struct Actor {
@@ -254,6 +267,7 @@ struct Actor {
     shutting_down: bool,
     /// Last revision handed out; see `Task::rev`.
     rev: u64,
+    sites: HashMap<String, SiteGate>,
 }
 
 impl Actor {
@@ -640,17 +654,26 @@ impl Actor {
             if self.cfg.max_concurrent.is_some_and(|max| self.jobs.len() >= max) {
                 return;
             }
+            let now = Utc::now();
             let next = self
                 .tasks
                 .iter()
-                .find(|t| t.state == TaskState::Queued && !self.jobs.contains_key(&t.id))
-                .map(|t| t.id);
-            let Some(id) = next else { return };
-            self.start_job(id);
+                .filter(|t| t.state == TaskState::Queued && !self.jobs.contains_key(&t.id))
+                .find_map(|t| {
+                    let site = self.resolver.site(&t.url);
+                    let gate = site.as_ref().and_then(|s| self.sites.get(s));
+                    let open = gate.is_none_or(|g| g.resolving.is_none() && g.closed_until.is_none_or(|until| until <= now));
+                    open.then(|| (t.id, site))
+                });
+            let Some((id, site)) = next else { return };
+            if let Some(site) = &site {
+                self.sites.entry(site.clone()).or_default().resolving = Some(id);
+            }
+            self.start_job(id, site);
         }
     }
 
-    fn start_job(&mut self, id: TaskId) {
+    fn start_job(&mut self, id: TaskId, site: Option<String>) {
         let task = self.tasks.iter().find(|t| t.id == id).expect("queued task exists");
         // Nothing fetched yet and no name from the user: resolution may name the file.
         let may_rename = !task.custom_name && task.downloaded == 0;
@@ -681,6 +704,7 @@ impl Actor {
                 part_path: spec.part_path.clone(),
                 stop: None,
                 speed: SpeedMeter::default(),
+                site,
             },
         );
         let (msgs, resolver) = (self.job_tx.clone(), self.resolver.clone());
@@ -696,7 +720,21 @@ impl Actor {
         });
     }
 
+    /// `id` no longer resolves: the next download of its site may.
+    fn release_site(&mut self, id: TaskId) {
+        let site = self.jobs.get(&id).and_then(|j| j.site.clone());
+        if let Some(gate) = site.and_then(|s| self.sites.get_mut(&s)) {
+            if gate.resolving == Some(id) {
+                gate.resolving = None;
+            }
+        }
+    }
+
     fn job_update(&mut self, msg: JobMsg) {
+        if let JobMsg::Phase(id, Phase::Transferring) = &msg {
+            self.release_site(*id);
+            self.pump();
+        }
         match msg {
             // A stopping job's phase is no longer what the user sees.
             JobMsg::Phase(id, phase) if self.jobs.get(&id).is_some_and(|j| j.stop.is_none()) => {
@@ -731,7 +769,13 @@ impl Actor {
     }
 
     fn finished(&mut self, id: TaskId, result: Result<PathBuf, CoreError>) {
+        self.release_site(id);
         let Some(job) = self.jobs.remove(&id) else { return };
+        if let (Err(CoreError::SiteLimit { retry_after, .. }), Some(site)) = (&result, &job.site) {
+            let until = Utc::now() + chrono::Duration::seconds(*retry_after as i64);
+            let gate = self.sites.entry(site.clone()).or_default();
+            gate.closed_until = Some(gate.closed_until.map_or(until, |at| at.max(until)));
+        }
         if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
             task.phase = None; // announced with the state change below
         }
@@ -784,7 +828,10 @@ impl Actor {
             t.speed = 0;
             t.finished_at = Some(Utc::now());
             t.next_retry_at = None;
-            if auto.enabled && error.is_retryable() && t.retry_count < auto.max_attempts {
+            if let CoreError::SiteLimit { retry_after, .. } = &error {
+                // The site said when: not one of the automatic retries, and not up to the setting.
+                t.next_retry_at = Some(Utc::now() + chrono::Duration::seconds(*retry_after as i64));
+            } else if auto.enabled && error.is_retryable() && t.retry_count < auto.max_attempts {
                 t.retry_count += 1;
                 let factor = 1u32.checked_shl(t.retry_count - 1).unwrap_or(u32::MAX);
                 let delay = auto.interval.saturating_mul(factor);
@@ -797,6 +844,9 @@ impl Actor {
     /// Move scheduled and retry-pending tasks whose time has come into the queue.
     fn wake_due(&mut self) {
         let now = Utc::now();
+        for gate in self.sites.values_mut() {
+            gate.closed_until = gate.closed_until.filter(|&until| until > now);
+        }
         let due = self.ids_where(|t| match t.state {
             TaskState::Scheduled => t.scheduled_at.is_none_or(|at| at <= now),
             TaskState::Failed => t.next_retry_at.is_some_and(|at| at <= now),
@@ -813,6 +863,8 @@ impl Actor {
 
     fn next_wakeup(&self) -> Option<Duration> {
         let now = Utc::now();
+        // A site opening lets its queued downloads start.
+        let sites = self.sites.values().filter_map(|g| g.closed_until.filter(|&until| until > now));
         self.tasks
             .iter()
             .filter_map(|t| match t.state {
@@ -820,6 +872,7 @@ impl Actor {
                 TaskState::Failed => t.next_retry_at,
                 _ => None,
             })
+            .chain(sites)
             .min()
             .map(|at| (at - now).to_std().unwrap_or(Duration::ZERO))
     }

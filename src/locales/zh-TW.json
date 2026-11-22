@@ -71,6 +71,8 @@
       "scheduledStart": "排程開始時間",
       "notScheduled": "未排程",
       "nextRetryAt": "下次自動重試",
+      "nextTryAt": "下次嘗試",
+      "siteLimit": "網站限制",
       "module": "解析模組",
       "directDownload": "直接下載",
       "pageUrl": "來源頁面",
@@ -114,6 +116,7 @@
       "otherUrl": "換別的網址"
     },
     "retryPending": "等待重試",
+    "siteLimit": "等待網站限制",
     "menu": {
       "restart": "從頭下載",
       "categories": "分類",

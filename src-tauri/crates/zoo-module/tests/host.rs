@@ -36,7 +36,7 @@ async fn fail_carries_message_and_hint() {
         "export default { async resolve(url, zoo) { throw zoo.fail('no link', { hint: 'page changed' }); } };",
     );
     match host().resolve(m, "https://site/f", Limits::default(), &NoInteraction).await {
-        Err(ModuleError::Script { message, hint, stack }) => {
+        Err(ModuleError::Script { message, hint, stack, .. }) => {
             assert_eq!(message, "no link");
             assert_eq!(hint.as_deref(), Some("page changed"));
             assert!(stack.is_some());

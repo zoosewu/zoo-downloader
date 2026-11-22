@@ -14,7 +14,10 @@ const AdvancedInfoTab: React.FC<{ task: Task }> = ({ task }) => {
       <PropertyList
         items={[
           { label: t('downloads.details.retryCount'), value: task.retryCount },
-          task.nextRetryAt && { label: t('downloads.details.nextRetryAt'), value: formatAbsoluteTime(task.nextRetryAt) },
+          task.nextRetryAt && {
+            label: t(task.error?.kind === 'siteLimit' ? 'downloads.details.nextTryAt' : 'downloads.details.nextRetryAt'),
+            value: formatAbsoluteTime(task.nextRetryAt),
+          },
           {
             label: t('downloads.details.scheduledStart'),
             value: task.scheduledAt ? formatAbsoluteTime(task.scheduledAt) : t('downloads.details.notScheduled'),

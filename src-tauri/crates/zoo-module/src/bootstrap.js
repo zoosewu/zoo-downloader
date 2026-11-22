@@ -20,9 +20,16 @@
   globalThis.console = { ...log, log: log.info };
 
   const { op_zoo_credential, op_zoo_wait, op_zoo_captcha } = core.ops;
-  const fail = (message, { hint } = {}) => {
+  // `retryAfter`: the site refuses for that many seconds (a free download limit, a used-up
+  // quota); the app waits it out without holding a download slot, then tries again.
+  const fail = (message, { hint, retryAfter } = {}) => {
     const error = new Error(message);
     if (hint !== undefined) error.hint = String(hint);
+    if (retryAfter !== undefined) {
+      const seconds = Math.ceil(Number(retryAfter));
+      if (!(seconds > 0)) throw new TypeError("zoo.fail: retryAfter must be a positive number of seconds");
+      error.retryAfter = seconds;
+    }
     return error;
   };
   const solved = (solution) => {
@@ -77,7 +84,7 @@
 
   // Called by the generated entry module with the module's default export.
   // `work` is "resolve" or "list"; `url` null means load and shape check only ({"checked": true}).
-  // Otherwise settles with a JSON string: {"ok": result} | {"err": {message, hint, stack}} |
+  // Otherwise settles with a JSON string: {"ok": result} | {"err": {message, hint, stack, retryAfter}} |
   // {"invalid": why}; a list call on a module without `list` gives {"ok": null}.
   const run = async (module, work, url) => {
     if (module === null || typeof module !== "object" || typeof module.resolve !== "function") {
@@ -98,6 +105,7 @@
           message: isObject && "message" in e ? String(e.message) : String(e),
           hint: isObject && typeof e.hint === "string" ? e.hint : null,
           stack: isObject && typeof e.stack === "string" ? e.stack : null,
+          retryAfter: isObject && typeof e.retryAfter === "number" ? e.retryAfter : null,
         },
       });
     }

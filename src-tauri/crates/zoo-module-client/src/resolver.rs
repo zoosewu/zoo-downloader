@@ -79,6 +79,10 @@ impl ModuleResolver {
 }
 
 impl Resolver for ModuleResolver {
+    fn site(&self, url: &str) -> Option<String> {
+        self.module_for(url).map(|installed| installed.module.id)
+    }
+
     fn resolve<'a>(&'a self, url: &'a str, memory: Memory, report: PhaseReport) -> Resolving<'a> {
         Box::pin(async move {
             let Some(installed) = self.module_for(url) else { return Ok(Source::direct(url)) };
@@ -158,6 +162,9 @@ fn core_error(module: &str, error: ModuleError) -> CoreError {
     let resolve = |message: String, hint: Option<String>, retryable| CoreError::Resolve { message, hint, retryable };
     match error {
         ModuleError::Cancelled => CoreError::Cancelled,
+        ModuleError::Script { message, hint, retry_after: Some(retry_after), .. } => {
+            CoreError::SiteLimit { message: format!("{module}: {message}"), hint, retry_after }
+        }
         ModuleError::Script { message, hint, .. } => resolve(format!("{module}: {message}"), hint, true),
         ModuleError::Load { message, hint } => resolve(format!("{module} is broken: {message}"), hint, false),
         ModuleError::OutOfMemory { .. } => resolve(format!("{module}: {error}"), None, false),

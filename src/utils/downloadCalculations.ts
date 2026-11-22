@@ -92,7 +92,7 @@ export function statusLabel(task: Task, t: (key: string) => string, now = Date.n
   const until = deadline(task);
   const label =
     task.state === 'failed' && until
-      ? t('downloads.retryPending')
+      ? t(task.error?.kind === 'siteLimit' ? 'downloads.siteLimit' : 'downloads.retryPending')
       : phase && phase.kind !== 'transferring'
         ? t(`downloads.phase.${phase.kind}`)
         : t(`downloads.state.${task.state}`);

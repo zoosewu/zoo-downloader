@@ -1,6 +1,6 @@
 //! `manifest.json` of a site module. `apiVersion` is the API level the module is written
 //! against; this app runs levels `MIN_API_VERSION..=API_VERSION`. A level adds to the one
-//! before it (level 2: help texts and translations for account fields; level 3: `zoo.ask`; level 4: `decrypt` in `resolve`'s result); a change that breaks
+//! before it (level 2: help texts and translations for account fields; level 3: `zoo.ask`; level 4: `decrypt` in `resolve`'s result; level 5: `zoo.fail`'s `retryAfter`); a change that breaks
 //! old modules would raise `MIN_API_VERSION`.
 //! The editor-facing contract is `crates/zoo-module/sdk/manifest.schema.json`; tests keep the
 //! two in agreement.
@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// The newest API level this app runs (the SDK's).
-pub const API_VERSION: u32 = 4;
+pub const API_VERSION: u32 = 5;
 /// The oldest API level this app still runs.
 pub const MIN_API_VERSION: u32 = 1;
 
@@ -373,9 +373,9 @@ mod tests {
         assert_eq!(m.entry, "dist/index.js");
         assert!(m.permissions.credentials[0].secret);
 
-        let newer = Manifest::parse(&minimal.replace("\"apiVersion\": 1", "\"apiVersion\": 5")).unwrap_err();
+        let newer = Manifest::parse(&minimal.replace("\"apiVersion\": 1", "\"apiVersion\": 6")).unwrap_err();
         assert!(newer.contains("needs a newer Zoo Downloader"), "{newer}");
-        let newer_with_new_fields = minimal.replace("\"apiVersion\": 1", "\"apiVersion\": 5").replace("\"id\"", "\"futureField\": 1, \"id\"");
+        let newer_with_new_fields = minimal.replace("\"apiVersion\": 1", "\"apiVersion\": 6").replace("\"id\"", "\"futureField\": 1, \"id\"");
         assert!(Manifest::parse(&newer_with_new_fields).unwrap_err().contains("needs a newer Zoo Downloader"), "the level is checked first");
         assert!(Manifest::parse(&minimal.replace("\"apiVersion\": 1", "\"apiVersion\": 0")).unwrap_err().contains("no longer supported"));
         assert!(Manifest::parse(&minimal.replace("\"id\"", "\"className\": \"X\", \"id\"")).is_err(), "unknown fields fail");

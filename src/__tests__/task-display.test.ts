@@ -81,6 +81,13 @@ describe('task status', () => {
     // Due but not yet picked up.
     expect(statusLabel(task({ state: 'failed', nextRetryAt: '2026-11-03T23:59:00Z' }), t, now)).toBe('downloads.retryPending 0:00');
     expect(statusLabel(task({ state: 'failed' }), t, now)).toBe('downloads.state.failed');
+    // The site said when (a free download limit): not a retry of a failure.
+    const limited = task({
+      state: 'failed',
+      nextRetryAt: '2026-11-04T01:50:00Z',
+      error: { kind: 'siteLimit', detail: { message: 'katfile: wait', hint: null, retryAfter: 6600 } },
+    });
+    expect(statusLabel(limited, t, now)).toBe('downloads.siteLimit 1:50:00');
   });
 
   test('a stale phase on a stopped task is ignored', () => {

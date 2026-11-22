@@ -135,6 +135,29 @@ async fn decrypt_reaches_the_app_from_api_level_4() {
 }
 
 #[tokio::test]
+async fn a_site_limit_tells_the_app_when_to_try_again() {
+    let dir = TempDir::new().unwrap();
+    let code = "export default { async resolve(url, zoo) { throw zoo.fail('one free download every 2 hours', { retryAfter: 59.2 }); } };";
+    match loopback_host().resolve(module(&dir, "limited", code), "https://page/", limits(5_000), &User::default()).await {
+        Err(ModuleError::Script { message, retry_after, .. }) => {
+            assert_eq!(message, "one free download every 2 hours");
+            assert_eq!(retry_after, Some(60), "whole seconds, rounded up");
+        }
+        other => panic!("expected a site limit, got {other:?}"),
+    }
+    let old = zoo_module_client::ModuleRef { api_version: 4, ..module(&dir, "old", code) };
+    match loopback_host().resolve(old, "https://page/", limits(5_000), &User::default()).await {
+        Err(ModuleError::Script { message, retry_after: None, .. }) => assert!(message.contains("\"apiVersion\": 5"), "{message}"),
+        other => panic!("expected a plain script error, got {other:?}"),
+    }
+    let bad = module(&dir, "bad", &code.replace("59.2", "-1"));
+    match loopback_host().resolve(bad, "https://page/", limits(5_000), &User::default()).await {
+        Err(ModuleError::Script { message, .. }) => assert!(message.contains("retryAfter must be a positive"), "{message}"),
+        other => panic!("expected a script error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn declined_captcha_fails_the_call() {
     let dir = TempDir::new().unwrap();
     let m = module(&dir, "declined", "export default { async resolve(url, zoo) { await zoo.captcha.recaptcha({ siteKey: 'k', pageUrl: url }); } };");

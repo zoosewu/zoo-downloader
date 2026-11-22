@@ -40,6 +40,8 @@ struct Scripted {
     seen: Mutex<Vec<String>>,
     hang: Vec<usize>,
     script: Script,
+    /// Share pages belong to one site (`Resolver::site`); without it, none do.
+    sites: bool,
 }
 
 impl Scripted {
@@ -47,7 +49,7 @@ impl Scripted {
         Self::hanging(&[], script)
     }
     fn hanging(hang: &[usize], script: impl Fn(usize) -> Result<Source, CoreError> + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { calls: AtomicUsize::new(0), seen: Mutex::new(Vec::new()), hang: hang.to_vec(), script: Box::new(script) })
+        Arc::new(Self { calls: AtomicUsize::new(0), seen: Mutex::new(Vec::new()), hang: hang.to_vec(), script: Box::new(script), sites: false })
     }
     fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
@@ -55,6 +57,10 @@ impl Scripted {
 }
 
 impl Resolver for Scripted {
+    fn site(&self, url: &str) -> Option<String> {
+        (self.sites && url.starts_with(SHARE_PAGE)).then(|| "share".to_string())
+    }
+
     fn resolve<'a>(&'a self, url: &'a str, _memory: Memory, report: PhaseReport) -> Resolving<'a> {
         Box::pin(async move {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
@@ -439,4 +445,75 @@ async fn categories_follow_the_rules_until_the_user_sets_them() {
     m.update_config(Config { categories: categories(&["share"]), ..config() });
     wait_until(&m, auto.id, |t| t.tags == ["share"]).await;
     wait_until(&m, manual.id, |t| t.tags.is_empty()).await;
+}
+
+fn on_site(script: impl Fn(usize) -> Result<Source, CoreError> + Send + Sync + 'static) -> Arc<Scripted> {
+    on_site_hanging(&[], script)
+}
+
+fn on_site_hanging(hang: &[usize], script: impl Fn(usize) -> Result<Source, CoreError> + Send + Sync + 'static) -> Arc<Scripted> {
+    let mut scripted = Arc::try_unwrap(Scripted::hanging(hang, script)).ok().unwrap();
+    scripted.sites = true;
+    Arc::new(scripted)
+}
+
+fn req_url(dir: &Path, url: &str) -> AddRequest {
+    AddRequest { url: url.into(), ..req(dir, None) }
+}
+
+/// KatFile: one free download every 2 hours. The task that hears it waits without a slot, the
+/// site's other downloads do not even start, other sites carry on, and when the time comes the
+/// site's downloads go in queue order.
+#[tokio::test]
+async fn a_site_limit_holds_the_site_but_not_the_slots() {
+    let fx = Fixture::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = fx.url("/file/5000");
+    let resolver = on_site(move |n| {
+        if n == 0 {
+            Err(CoreError::SiteLimit { message: "wait".into(), hint: None, retry_after: 3 })
+        } else {
+            Ok(expiring(file.clone()))
+        }
+    });
+    let cfg = Config { max_concurrent: Some(1), ..config() };
+    let m = start(cfg, dir.path(), resolver.clone());
+    let pages = [format!("{SHARE_PAGE}#1"), format!("{SHARE_PAGE}#2"), format!("{SHARE_PAGE}#3")];
+    let mut ids = Vec::new();
+    for page in &pages {
+        ids.push(m.add(req_url(dir.path(), page)).await.unwrap().id);
+    }
+    let waiting = wait_until(&m, ids[0], |t| t.state == TaskState::Failed).await;
+    assert!(waiting.next_retry_at.is_some(), "it tries again when the site said");
+    assert_eq!(waiting.retry_count, 0, "not one of the automatic retries");
+
+    // The one slot is free for another site meanwhile; the site's others have not started.
+    let elsewhere = m.add(req_url(dir.path(), &fx.url("/file/3000"))).await.unwrap().id;
+    wait_until(&m, elsewhere, |t| t.state == TaskState::Completed).await;
+    assert_eq!(resolver.calls(), 2, "only the limited task and the other site resolved: {:?}", resolver.seen.lock().unwrap());
+    let tasks = m.list().await.unwrap();
+    assert!(ids[1..].iter().all(|id| tasks.iter().any(|t| t.id == *id && t.state == TaskState::Queued)));
+
+    for id in &ids {
+        wait_until(&m, *id, |t| t.state == TaskState::Completed).await;
+    }
+    let seen = resolver.seen.lock().unwrap().clone();
+    let site: Vec<_> = seen.iter().filter(|u| u.starts_with(SHARE_PAGE)).cloned().collect();
+    assert_eq!(site, [&pages[0], &pages[0], &pages[1], &pages[2]].map(String::clone), "queue order kept");
+}
+
+#[tokio::test]
+async fn downloads_of_one_site_resolve_one_at_a_time() {
+    let fx = Fixture::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = fx.url("/file/5000");
+    // The first resolution never ends (a captcha nobody answers).
+    let resolver = on_site_hanging(&[0], move |_| Ok(expiring(file.clone())));
+    let m = start(config(), dir.path(), resolver.clone());
+    m.add(req_url(dir.path(), &format!("{SHARE_PAGE}#1"))).await.unwrap();
+    let second = m.add(req_url(dir.path(), &format!("{SHARE_PAGE}#2"))).await.unwrap().id;
+    let elsewhere = m.add(req_url(dir.path(), &fx.url("/file/3000"))).await.unwrap().id;
+    wait_until(&m, elsewhere, |t| t.state == TaskState::Completed).await;
+    let t = m.list().await.unwrap().into_iter().find(|t| t.id == second).unwrap();
+    assert_eq!(t.state, TaskState::Queued, "waits for the site's resolution before it");
 }

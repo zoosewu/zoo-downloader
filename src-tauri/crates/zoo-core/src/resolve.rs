@@ -88,6 +88,12 @@ pub type Resolving<'a> = Pin<Box<dyn Future<Output = Result<Source, CoreError>> 
 pub trait Resolver: Send + Sync {
     /// Resolve `url`. Dropping the future abandons the resolution.
     fn resolve<'a>(&'a self, url: &'a str, memory: Memory, report: PhaseReport) -> Resolving<'a>;
+
+    /// The site `url` belongs to, when its limits apply to all of that site's downloads (the
+    /// site module's key). Downloads of one site resolve one at a time, in queue order.
+    fn site(&self, _url: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Every URL is the file itself.

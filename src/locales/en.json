@@ -71,6 +71,8 @@
       "scheduledStart": "Scheduled Start",
       "notScheduled": "Not Scheduled",
       "nextRetryAt": "Next automatic retry",
+      "nextTryAt": "Next try",
+      "siteLimit": "Site limit",
       "module": "Site module",
       "directDownload": "Direct download",
       "pageUrl": "Found on",
@@ -114,6 +116,7 @@
       "otherUrl": "Use another URL"
     },
     "retryPending": "Retrying in",
+    "siteLimit": "Site limit, next try in",
     "menu": {
       "restart": "Download again from the start",
       "categories": "Categories",

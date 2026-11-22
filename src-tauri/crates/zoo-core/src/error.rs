@@ -30,6 +30,15 @@ pub enum CoreError {
     /// A site module could not turn the URL into a download.
     #[error("{message}")]
     Resolve { message: String, hint: Option<String>, retryable: bool },
+    /// The site refuses for `retry_after` seconds (a free download limit, a used-up quota).
+    /// The task waits that out without a download slot, and the site's other tasks wait too.
+    #[error("{message}")]
+    SiteLimit {
+        message: String,
+        hint: Option<String>,
+        #[serde(rename = "retryAfter")]
+        retry_after: u64,
+    },
     /// The task's URL was changed and the new one does not serve the bytes already
     /// downloaded. The partial data is kept; `restart` discards it.
     #[error("the new URL serves a different file: {0}")]
@@ -79,6 +88,12 @@ mod tests {
         assert!(CoreError::Network("reset".into()).is_retryable());
         assert!(!CoreError::Io("disk full".into()).is_retryable());
         assert!(!CoreError::Cancelled.is_retryable());
+    }
+
+    #[test]
+    fn site_limits_cross_the_seam_in_camel_case() {
+        let json = serde_json::to_value(CoreError::SiteLimit { message: "m".into(), hint: None, retry_after: 60 }).unwrap();
+        assert_eq!(json, serde_json::json!({ "kind": "siteLimit", "detail": { "message": "m", "hint": null, "retryAfter": 60 } }));
     }
 
     #[test]

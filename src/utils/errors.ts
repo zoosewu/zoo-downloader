@@ -8,6 +8,7 @@ export function errorText(error: CoreError | null, t: TFunction): string {
   if (!error) return '';
   switch (error.kind) {
     case 'resolve':
+    case 'siteLimit':
       return error.detail.hint ? `${error.detail.message} (${error.detail.hint})` : error.detail.message;
     case 'http':
       return t('errors.core.http', { status: error.detail });

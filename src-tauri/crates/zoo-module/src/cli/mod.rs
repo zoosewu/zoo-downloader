@@ -135,6 +135,11 @@ fn exit(ok: bool) -> ExitCode {
 /// What to do about a failed call, beyond its message.
 fn hint_for(error: &ModuleError) -> Option<String> {
     match error {
+        // What the app will do: shown with the module's own hint.
+        ModuleError::Script { hint, retry_after: Some(seconds), .. } => Some(format!(
+            "{}the app waits {seconds} s (retryAfter) without a download slot, holding this site's other downloads",
+            hint.as_ref().map(|h| format!("{h}; ")).unwrap_or_default()
+        )),
         ModuleError::Load { hint, .. } | ModuleError::Script { hint, .. } => hint.clone(),
         ModuleError::Timeout { limit_ms } => Some(format!(
             "resolve ran longer than {} s (zoo.wait and captchas do not count): look for a loop that never ends \

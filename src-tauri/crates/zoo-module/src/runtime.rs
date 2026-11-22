@@ -153,6 +153,7 @@ async fn run(
                 message: format!("list returned a url with a credential placeholder: {:?}", item.url),
                 hint: Some("put credentials in the requests resolve makes, not in listed urls".into()),
                 stack: None,
+                retry_after: None,
             }),
             None => Ok(Done::Listed(items)),
         },
@@ -195,8 +196,9 @@ async fn execute(runtime: &mut JsRuntime, entry: &ModuleSpecifier, work: Work<'_
                 message: "resolve never settled: it awaits something that can no longer happen".into(),
                 hint: None,
                 stack: None,
+                retry_after: None,
             },
-            other => ModuleError::Script { message: other.to_string(), hint: None, stack: None },
+            other => ModuleError::Script { message: other.to_string(), hint: None, stack: None, retry_after: None },
         })?;
     let json = {
         deno_core::scope!(scope, runtime);
@@ -211,7 +213,8 @@ async fn execute(runtime: &mut JsRuntime, entry: &ModuleSpecifier, work: Work<'_
 #[serde(rename_all = "camelCase")]
 enum Outcome {
     Ok(serde_json::Value),
-    Err { message: String, hint: Option<String>, stack: Option<String> },
+    #[serde(rename_all = "camelCase")]
+    Err { message: String, hint: Option<String>, stack: Option<String>, retry_after: Option<u64> },
     Invalid(String),
     Checked(serde::de::IgnoredAny),
 }
@@ -223,14 +226,20 @@ fn outcome(json: &str, work: Work, level: ApiLevel) -> Result<Done, ModuleError>
             _ => validate(value, level).map(Done::Resolved),
         },
         Ok(Outcome::Checked(_)) => Ok(Done::Loaded),
-        Ok(Outcome::Err { message, hint, stack }) => Err(ModuleError::Script { message, hint, stack }),
+        Ok(Outcome::Err { message, hint, stack, retry_after: Some(_) }) if level.0 < 5 => Err(ModuleError::Script {
+            message: format!("{message} (zoo.fail's retryAfter needs \"apiVersion\": 5 in manifest.json)"),
+            hint,
+            stack,
+            retry_after: None,
+        }),
+        Ok(Outcome::Err { message, hint, stack, retry_after }) => Err(ModuleError::Script { message, hint, stack, retry_after }),
         Ok(Outcome::Invalid(why)) => Err(ModuleError::Load { message: why, hint: Some(SHAPE_HINT.into()) }),
         Err(e) => Err(ModuleError::Crashed { message: format!("unreadable module outcome: {e}") }),
     }
 }
 
 fn validate(value: serde_json::Value, level: ApiLevel) -> Result<Resolved, ModuleError> {
-    let invalid = |message: String| ModuleError::Script { message, hint: Some(RESULT_HINT.into()), stack: None };
+    let invalid = |message: String| ModuleError::Script { message, hint: Some(RESULT_HINT.into()), stack: None, retry_after: None };
     let resolved: Resolved =
         serde_json::from_value(value).map_err(|e| invalid(format!("resolve returned an invalid result: {e}")))?;
     if resolved.max_segment_size.is_some_and(|n| n < MIN_SEGMENT_SIZE) {
@@ -255,7 +264,7 @@ fn validate(value: serde_json::Value, level: ApiLevel) -> Result<Resolved, Modul
 
 /// `null` (no `list`) is the URL itself. Folders come back normalized (`a/b`, no empty parts).
 fn validate_list(value: serde_json::Value, url: &str) -> Result<Vec<Listed>, ModuleError> {
-    let invalid = |message: String| ModuleError::Script { message, hint: Some(LIST_HINT.into()), stack: None };
+    let invalid = |message: String| ModuleError::Script { message, hint: Some(LIST_HINT.into()), stack: None, retry_after: None };
     if value.is_null() {
         return Ok(vec![Listed { url: url.into(), filename: None, size: None, folder: None }]);
     }
@@ -266,6 +275,7 @@ fn validate_list(value: serde_json::Value, url: &str) -> Result<Vec<Listed>, Mod
             message: format!("this link holds {} files; at most {MAX_LISTED} can be added at once", items.len()),
             hint: Some("share or add the files in smaller groups".into()),
             stack: None,
+            retry_after: None,
         });
     }
     let mut seen = std::collections::HashSet::new();
@@ -304,7 +314,7 @@ fn module_load_error(e: CoreError) -> ModuleError {
 }
 
 fn script_error(e: deno_core::error::JsError) -> ModuleError {
-    ModuleError::Script { message: e.exception_message.clone(), hint: None, stack: e.stack.clone() }
+    ModuleError::Script { message: e.exception_message.clone(), hint: None, stack: e.stack.clone(), retry_after: None }
 }
 
 /// Serves exactly three modules: the generated entry wrapper, the module file, and the SDK.
