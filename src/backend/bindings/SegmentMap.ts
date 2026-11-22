@@ -4,8 +4,4 @@ import type { ActiveRange } from "./ActiveRange";
 /**
  * Which bytes of a task are done and which are being fetched; byte ranges are `[start, end)`.
  */
-export type SegmentMap = { total: number | null, 
-/**
- * Size of the pieces the transfer hands to its connections.
- */
-segmentSize: number, done: Array<[number, number]>, active: Array<ActiveRange>, };
+export type SegmentMap = { total: number | null, done: Array<[number, number]>, active: Array<ActiveRange>, };

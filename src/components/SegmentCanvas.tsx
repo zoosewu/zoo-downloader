@@ -1,11 +1,14 @@
-// The segment grid, drawn on a canvas in device pixels. A CSS grid of 12px cells with 2px gaps
-// lands on half pixels at 125% display scaling, so the gaps alternate between 2 and 3 pixels;
-// here every cell and gap is a whole number of device pixels. One tooltip follows the pointer.
+// The segment grid, drawn on a canvas in device pixels. A CSS grid of small cells with gaps
+// lands on half pixels at 125% display scaling, so the gaps alternate in width; here every cell
+// and gap is a whole number of device pixels. One tooltip follows the pointer.
+//
+// Up to 3000 cells: only the cells whose status changed since the last frame are painted (in
+// a download, the few under its connections); size, colors or cell count changing repaint all.
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Tooltip } from '@mui/material';
 import type { SegmentCell, CellStatus } from '../utils/segments';
 
-const CELL = 12; // CSS px
+const CELL = 8; // CSS px
 const GAP = 2;
 
 interface Props {
@@ -17,6 +20,8 @@ interface Props {
 const SegmentCanvas: React.FC<Props> = ({ cells, colors, describe }) => {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  /** What is on the canvas: the layout it was painted for and each cell's status. */
+  const painted = useRef<{ layout: string; colors: Props['colors']; statuses: CellStatus[] } | null>(null);
   const [width, setWidth] = useState(0);
   const [hover, setHover] = useState<SegmentCell | null>(null);
 
@@ -38,15 +43,22 @@ const SegmentCanvas: React.FC<Props> = ({ cells, colors, describe }) => {
   useEffect(() => {
     const c = canvas.current;
     if (!c || width === 0) return;
-    c.width = columns * pitch - gap;
-    c.height = Math.max(0, rows * pitch - gap);
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, c.width, c.height);
+    const layout = `${columns}x${rows}/${cells.length}@${pitch}`;
+    const last = painted.current;
+    const all = !last || last.layout !== layout || last.colors !== colors;
+    if (all) {
+      // Resizing the canvas clears it.
+      c.width = columns * pitch - gap;
+      c.height = Math.max(0, rows * pitch - gap);
+    }
     cells.forEach((s, i) => {
+      if (!all && last.statuses[i] === s.status) return;
       ctx.fillStyle = colors[s.status];
       ctx.fillRect((i % columns) * pitch, Math.floor(i / columns) * pitch, cell, cell);
     });
+    painted.current = { layout, colors, statuses: cells.map((s) => s.status) };
   }, [cells, colors, width, columns, rows, pitch, cell, gap]);
 
   const at = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -58,7 +70,7 @@ const SegmentCanvas: React.FC<Props> = ({ cells, colors, describe }) => {
   };
 
   return (
-    <Box ref={box} sx={{ maxHeight: 220, overflowY: 'auto', lineHeight: 0 }}>
+    <Box ref={box} sx={{ maxHeight: 300, overflowY: 'auto', lineHeight: 0 }}>
       <Tooltip title={hover ? describe(hover) : ''} followCursor placement="top" enterDelay={0}>
         <canvas
           ref={canvas}

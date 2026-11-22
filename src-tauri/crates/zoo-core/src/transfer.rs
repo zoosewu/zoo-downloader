@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, LAST_MODIFIED, RANGE};
 use reqwest::{Response, StatusCode};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -44,7 +44,11 @@ pub struct TransferSpec {
     /// In-progress file; see `naming::part_path`.
     pub part_path: PathBuf,
     pub connections: usize,
-    pub segment_size: u64,
+    /// The least a split of a worker's range leaves on either side (see `run_workers`).
+    pub min_split: u64,
+    /// The most one request may ask for (sites that refuse large ranges); `None`: a worker's
+    /// whole range in one request.
+    pub max_request: Option<u64>,
     pub retry: RetryPolicy,
     /// The server's bytes are encrypted: decrypted before they are written (or compared).
     pub decrypt: Option<Decrypt>,
@@ -408,21 +412,21 @@ fn samples(done: &[(u64, u64)]) -> Vec<Range<u64>> {
 }
 
 /// Fetch every missing range of `part` with up to `spec.connections` workers.
+///
+/// Each worker streams a range of its own, so there are few requests and no idle round trip
+/// between pieces. A worker that runs out takes a range nobody holds (a gap of the part file, or
+/// one a failing connection gave up), else the second half of what the busiest worker has left,
+/// when both halves are still worth a connection. All connections stay busy until the end.
 async fn run_workers(spec: &TransferSpec, ctx: &Ctx, part: &Arc<PartFile>) -> Result<(), SegmentError> {
-    let queue: VecDeque<Range<u64>> = part
-        .missing()
-        .into_iter()
-        .flat_map(|gap| split(gap, spec.segment_size.max(1)))
-        .collect();
-    let workers = spec.connections.max(1).min(queue.len());
-    let queue = Arc::new(Mutex::new(Queue { ranges: queue, workers }));
+    let workers = spec.connections.max(1);
+    let plan = Arc::new(Plan::new(part.missing(), workers, spec.min_split));
 
     let mut set = JoinSet::new();
     let spec = Arc::new(spec.clone());
     for id in 0..workers {
-        let (queue, part, ctx, spec) = (queue.clone(), part.clone(), ctx.clone(), spec.clone());
+        let (plan, part, ctx, spec) = (plan.clone(), part.clone(), ctx.clone(), spec.clone());
         set.spawn(async move {
-            let result = worker(id, &spec, &queue, &part, &ctx).await;
+            let result = worker(id, &spec, &plan, &part, &ctx).await;
             ctx.progress.set_active(id, None);
             result
         });
@@ -438,41 +442,128 @@ async fn run_workers(spec: &TransferSpec, ctx: &Ctx, part: &Arc<PartFile>) -> Re
     failure.map_or(Ok(()), Err)
 }
 
-fn split(range: Range<u64>, size: u64) -> impl Iterator<Item = Range<u64>> {
-    (range.start..range.end)
-        .step_by(size as usize)
-        .map(move |start| start..(start + size).min(range.end))
-}
-
 /// Show what `worker` is fetching (or waiting to retry) in the segment picture.
 fn mark(ctx: &Ctx, worker: usize, range: &Range<u64>, retrying: bool) {
     ctx.progress.set_active(worker, Some(ActiveRange { start: range.start, end: range.end, retrying }));
 }
 
-/// The ranges still to fetch, and how many workers are left to fetch them. One lock for both,
-/// so a range handed back is always taken by a worker that has not left yet.
-struct Queue {
-    ranges: VecDeque<Range<u64>>,
+/// A worker's range splits only when the other worker keeps at least this many seconds of
+/// its own speed: less is over before a new connection gets going.
+const SPLIT_SECONDS: f64 = 2.0;
+
+/// Who fetches what. One lock for all of it: a range handed back is always taken by a worker
+/// that has not left yet, and a split never races the bytes it moves.
+struct Plan(Mutex<PlanState>);
+
+struct PlanState {
+    /// Ranges nobody holds.
+    free: Vec<Range<u64>>,
+    /// What each worker has left (`start` is the next byte it writes), by worker index.
+    slots: Vec<Option<Slot>>,
+    /// Workers that have not left.
     workers: usize,
 }
 
-impl Queue {
-    /// The next range, or `None` when there is none: the caller leaves.
-    fn take(&mut self) -> Option<Range<u64>> {
-        let next = self.ranges.pop_front();
-        if next.is_none() {
-            self.workers -= 1;
+struct Slot {
+    left: Range<u64>,
+    fetched: u64,
+    since: Instant,
+}
+
+impl Slot {
+    /// The least a split may leave this worker or give away.
+    fn floor(&self, min_split: u64) -> u64 {
+        // Its first moments say little about its speed.
+        let secs = self.since.elapsed().as_secs_f64();
+        let speed = if secs >= 1.0 { self.fetched as f64 / secs } else { 0.0 };
+        min_split.max((speed * SPLIT_SECONDS) as u64)
+    }
+}
+
+impl Plan {
+    /// `free` split up front into a range per worker (halving the largest while that leaves
+    /// `min_split` on each side), so no request starts out covering another worker's bytes.
+    fn new(mut free: Vec<Range<u64>>, workers: usize, min_split: u64) -> Self {
+        while free.len() < workers {
+            let Some(i) = (0..free.len()).max_by_key(|&i| free[i].end - free[i].start) else { break };
+            let range = free[i].clone();
+            if range.end - range.start < 2 * min_split.max(1) {
+                break;
+            }
+            let mid = range.start + (range.end - range.start) / 2;
+            free[i] = range.start..mid;
+            free.push(mid..range.end);
         }
-        next
+        free.sort_by_key(|r| r.start);
+        Plan(Mutex::new(PlanState { free, slots: (0..workers).map(|_| None).collect(), workers }))
     }
 
-    /// Leave and hand `rest` to the remaining workers; false when this is the last worker.
-    fn hand_back(&mut self, rest: Range<u64>) -> bool {
-        if self.workers <= 1 {
+    /// The next range for `worker`, and the worker it was split from with what that one keeps.
+    /// `None`: nothing worth taking; the worker leaves.
+    fn next(&self, worker: usize, min_split: u64) -> Option<(Range<u64>, Option<(usize, Range<u64>)>)> {
+        let mut st = self.0.lock().unwrap();
+        // The largest free range; of equals, the first in the file.
+        let largest = (0..st.free.len()).max_by_key(|&i| (st.free[i].end - st.free[i].start, std::cmp::Reverse(st.free[i].start)));
+        let taken = if let Some(i) = largest {
+            Some((st.free.swap_remove(i), None))
+        } else {
+            let busiest = (0..st.slots.len())
+                .filter_map(|i| st.slots[i].as_ref().map(|s| (i, s.left.end.saturating_sub(s.left.start))))
+                .max_by_key(|&(_, left)| left);
+            busiest.and_then(|(victim, left)| {
+                let slot = st.slots[victim].as_mut()?;
+                if left < 2 * slot.floor(min_split) {
+                    return None;
+                }
+                let mid = slot.left.start + left / 2;
+                let given = mid..slot.left.end;
+                slot.left.end = mid;
+                Some((given, Some((victim, slot.left.clone()))))
+            })
+        };
+        match taken {
+            Some((range, robbed)) => {
+                st.slots[worker] = Some(Slot { left: range.clone(), fetched: 0, since: Instant::now() });
+                Some((range, robbed))
+            }
+            None => {
+                st.slots[worker] = None;
+                st.workers -= 1;
+                None
+            }
+        }
+    }
+
+    /// What `worker` has left to fetch.
+    fn left(&self, worker: usize) -> Range<u64> {
+        self.0.lock().unwrap().slots[worker].as_ref().map_or(0..0, |s| s.left.clone())
+    }
+
+    /// Claim up to `len` bytes at `offset`, the worker's next byte; fewer (or none) when the
+    /// range was split meanwhile.
+    fn claim(&self, worker: usize, offset: u64, len: u64) -> u64 {
+        let mut st = self.0.lock().unwrap();
+        let Some(slot) = st.slots[worker].as_mut() else { return 0 };
+        debug_assert_eq!(slot.left.start, offset, "a worker writes where it left off");
+        let n = len.min(slot.left.end.saturating_sub(slot.left.start));
+        slot.left.start += n;
+        slot.fetched += n;
+        n
+    }
+
+    /// Leave, giving what is left of the range to the remaining workers; false when this is the
+    /// last worker (the range would be lost).
+    fn hand_back(&self, worker: usize) -> bool {
+        let mut st = self.0.lock().unwrap();
+        if st.workers <= 1 {
             return false;
         }
-        self.workers -= 1;
-        self.ranges.push_front(rest);
+        st.workers -= 1;
+        if let Some(slot) = st.slots[worker].take() {
+            if !slot.left.is_empty() {
+                st.free.push(slot.left);
+            }
+        }
         true
     }
 }
@@ -484,25 +575,35 @@ fn connection_refused(e: &CoreError) -> bool {
     matches!(e, CoreError::Http(_) | CoreError::Network(_) | CoreError::NoConnection(_))
 }
 
-async fn worker(id: usize, spec: &TransferSpec, queue: &Mutex<Queue>, part: &PartFile, ctx: &Ctx) -> Result<(), SegmentError> {
-    loop {
-        let Some(mut range) = queue.lock().unwrap().take() else { return Ok(()) };
+async fn worker(id: usize, spec: &TransferSpec, plan: &Plan, part: &PartFile, ctx: &Ctx) -> Result<(), SegmentError> {
+    while let Some((range, robbed)) = plan.next(id, spec.min_split) {
+        if let Some((victim, kept)) = robbed {
+            mark(ctx, victim, &kept, false);
+        }
+        mark(ctx, id, &range, false);
         let (retry, mut attempt) = (spec.retry, 0);
         loop {
-            mark(ctx, id, &range, false);
-            let (result, reached) = fetch_range(spec, range.clone(), part, ctx).await;
-            let progressed = reached > range.start;
-            range.start = reached;
+            let left = plan.left(id);
+            if left.is_empty() {
+                break;
+            }
+            // Sites that refuse large ranges get several requests per range.
+            let request = left.start..spec.max_request.map_or(left.end, |max| left.end.min(left.start + max.max(1)));
+            let (result, reached) = fetch_range(spec, request.clone(), part, ctx, plan, id).await;
             let e = match result {
-                Ok(()) => break,
-                // Every byte arrived before the connection failed.
-                Err(SegmentError::Core(e)) if range.is_empty() && e.is_retryable() => break,
+                Ok(()) => {
+                    attempt = 0;
+                    continue;
+                }
+                // Every byte arrived (or the rest was split off) before the connection failed.
+                Err(SegmentError::Core(e)) if plan.left(id).is_empty() && e.is_retryable() => break,
                 Err(SegmentError::Core(e)) if e.is_retryable() => {
-                    // Progress earns a fresh set of attempts; only a stuck segment gives up.
-                    attempt = if progressed { 1 } else { attempt + 1 };
+                    // Progress earns a fresh set of attempts; only a stuck range gives up.
+                    attempt = if reached > request.start { 1 } else { attempt + 1 };
                     if attempt < retry.max_attempts {
-                        mark(ctx, id, &range, true);
+                        mark(ctx, id, &plan.left(id), true);
                         sleep_or_cancel(retry.delay(attempt), &ctx.cancel).await?;
+                        mark(ctx, id, &plan.left(id), false);
                         continue;
                     }
                     e
@@ -510,16 +611,25 @@ async fn worker(id: usize, spec: &TransferSpec, queue: &Mutex<Queue>, part: &Par
                 Err(SegmentError::Core(e)) => e,
                 Err(e) => return Err(e),
             };
-            if connection_refused(&e) && queue.lock().unwrap().hand_back(range.clone()) {
+            if connection_refused(&e) && plan.hand_back(id) {
                 return Ok(());
             }
             return Err(e.into());
         }
     }
+    Ok(())
 }
 
-/// Fetch `range` into the part file. Also returns how far it got, for resuming the segment.
-async fn fetch_range(spec: &TransferSpec, range: Range<u64>, part: &PartFile, ctx: &Ctx) -> (Result<(), SegmentError>, u64) {
+/// Fetch `range` (where `worker` left off) into the part file, until it ends or the plan gives
+/// its rest to another worker. Also returns how far it got.
+async fn fetch_range(
+    spec: &TransferSpec,
+    range: Range<u64>,
+    part: &PartFile,
+    ctx: &Ctx,
+    plan: &Plan,
+    worker: usize,
+) -> (Result<(), SegmentError>, u64) {
     let mut offset = range.start;
     let result = async {
         let (lease, response) = send(ctx, spec, Some(format!("bytes={}-{}", range.start, range.end - 1))).await?;
@@ -554,11 +664,18 @@ async fn fetch_range(spec: &TransferSpec, range: Range<u64>, part: &PartFile, ct
                     None => return Err(CoreError::Network("connection closed before segment end".into()).into()),
                 },
             };
-            let len = chunk.len().min((range.end - offset) as usize);
-            ctx.rate.acquire(len as u64).await;
-            part.write_at(offset, &spec.plain(offset, &chunk[..len]))?;
-            offset += len as u64;
-            ctx.progress.add(len as u64);
+            let want = chunk.len().min((range.end - offset) as usize) as u64;
+            let len = plan.claim(worker, offset, want) as usize;
+            if len > 0 {
+                ctx.rate.acquire(len as u64).await;
+                part.write_at(offset, &spec.plain(offset, &chunk[..len]))?;
+                offset += len as u64;
+                ctx.progress.add(len as u64);
+            }
+            // The rest went to another worker: drop this response.
+            if (len as u64) < want {
+                return Ok(());
+            }
         }
         Ok(())
     }
@@ -689,10 +806,59 @@ mod tests {
         assert!(s.iter().all(|r| r.end <= mb || r.start >= 3 * mb), "samples stay inside done ranges: {s:?}");
     }
 
+
     #[test]
-    fn splits_into_segments() {
-        assert_eq!(split(0..10, 4).collect::<Vec<_>>(), vec![0..4, 4..8, 8..10]);
-        assert_eq!(split(3..5, 100).collect::<Vec<_>>(), vec![3..5]);
+    fn ranges_are_shared_out_before_anyone_starts() {
+        let plan = Plan::new(vec![0..1000], 4, 100);
+        let mut got: Vec<_> = (0..4).map(|w| plan.next(w, 100).unwrap()).collect();
+        got.sort_by_key(|(r, _)| r.start);
+        assert_eq!(got, vec![(0..250, None), (250..500, None), (500..750, None), (750..1000, None)]);
+        // Small files get fewer connections, not slivers.
+        let plan = Plan::new(vec![0..300], 4, 100);
+        assert_eq!(plan.next(0, 100).unwrap().0.end - plan.left(0).start, 150);
+    }
+
+    #[test]
+    fn a_free_worker_takes_half_of_the_busiest_range() {
+        let plan = Plan::new(vec![0..1000], 2, 100);
+        assert_eq!(plan.next(0, 100).unwrap().0, 0..500);
+        assert_eq!(plan.next(1, 100).unwrap().0, 500..1000);
+        assert_eq!(plan.claim(1, 500, 500), 500);
+        // Worker 1 is done; it takes the second half of what worker 0 has left.
+        assert_eq!(plan.next(1, 100), Some((250..500, Some((0, 0..250)))));
+    }
+
+    #[test]
+    fn a_split_stops_the_worker_at_its_new_end() {
+        let plan = Plan::new(vec![0..1000], 1, 100);
+        plan.next(0, 100);
+        assert_eq!(plan.claim(0, 0, 300), 300);
+        let plan2 = &plan;
+        // A second worker joins (as one that finished its own range would).
+        plan2.0.lock().unwrap().slots.push(None);
+        assert_eq!(plan.next(1, 100).unwrap().0, 650..1000);
+        assert_eq!(plan.claim(0, 300, 400), 350, "only up to the new end");
+        assert_eq!(plan.claim(0, 650, 10), 0);
+        assert!(plan.left(0).is_empty());
+    }
+
+    #[test]
+    fn ranges_too_small_to_split_are_left_alone() {
+        let plan = Plan::new(vec![0..150], 2, 100);
+        assert_eq!(plan.next(0, 100).unwrap().0, 0..150);
+        assert_eq!(plan.next(1, 100), None, "75 bytes each would be under the floor");
+    }
+
+    #[test]
+    fn a_range_handed_back_goes_to_a_worker_still_there() {
+        let plan = Plan::new(vec![0..100, 100..1000], 2, 1000);
+        assert_eq!(plan.next(0, 1000).unwrap().0, 100..1000, "the largest free range first");
+        assert_eq!(plan.next(1, 1000).unwrap().0, 0..100);
+        plan.claim(0, 100, 50);
+        assert!(plan.hand_back(0));
+        assert!(!plan.hand_back(1), "the last worker keeps its range");
+        assert_eq!(plan.claim(1, 0, 100), 100);
+        assert_eq!(plan.next(1, 1000).unwrap().0, 150..1000);
     }
 
     #[test]

@@ -14,7 +14,7 @@ fn config() -> Config {
     Config {
         max_concurrent: Some(2),
         connections_per_task: 4,
-        segment_size: 64 * 1024,
+        min_split: 64 * 1024,
         speed_limit: None,
         auto_retry: AutoRetry { enabled: false, max_attempts: 0, interval: Duration::from_millis(10) },
         transfer_retry: RetryPolicy { max_attempts: 4, base_delay: Duration::from_millis(5), max_delay: Duration::from_millis(10) },

@@ -15,7 +15,6 @@ pub struct AppSettings {
     // Download settings
     pub default_download_dir: PathBuf,
     pub max_concurrent_downloads: Option<usize>, // None = unlimited
-    pub segment_size_mb: u64,                    // default 10MB
     pub thread_count: usize,                     // connections per download, default 8
     pub speed_limit_mode: SpeedLimitMode,
     pub speed_limit_kbps: Option<u64>,
@@ -93,7 +92,6 @@ impl Default for AppSettings {
             theme: Theme::Dark,
             default_download_dir: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
             max_concurrent_downloads: None,
-            segment_size_mb: 10,
             thread_count: 8,
             speed_limit_mode: SpeedLimitMode::Unlimited,
             speed_limit_kbps: None,
@@ -121,11 +119,11 @@ impl Default for AppSettings {
 impl AppSettings {
     /// The download engine's slice of the settings.
     pub fn engine_config(&self) -> zoo_core::Config {
-        const MB: u64 = 1024 * 1024;
         zoo_core::Config {
             max_concurrent: self.max_concurrent_downloads.filter(|&n| n > 0),
             connections_per_task: self.thread_count.max(1),
-            segment_size: self.segment_size_mb.max(1) * MB,
+            // How a download splits across its connections is the engine's call.
+            min_split: zoo_core::Config::default().min_split,
             speed_limit: match self.speed_limit_mode {
                 SpeedLimitMode::Fixed => self.speed_limit_kbps.filter(|&k| k > 0).map(|k| k * 1024),
                 SpeedLimitMode::Unlimited => None,
@@ -176,7 +174,6 @@ mod tests {
         let s = AppSettings {
             max_concurrent_downloads: Some(2),
             thread_count: 4,
-            segment_size_mb: 5,
             speed_limit_mode: SpeedLimitMode::Fixed,
             speed_limit_kbps: Some(100),
             auto_retry_enabled: false,
@@ -187,7 +184,6 @@ mod tests {
         let c = s.engine_config();
         assert_eq!(c.max_concurrent, Some(2));
         assert_eq!(c.connections_per_task, 4);
-        assert_eq!(c.segment_size, 5 * 1024 * 1024);
         assert_eq!(c.speed_limit, Some(100 * 1024));
         assert!(!c.auto_retry.enabled);
         assert_eq!(c.auto_retry.max_attempts, 7);

@@ -8,7 +8,6 @@ const defaultSettings: AppSettings = {
   theme: 'dark',
   defaultDownloadDir: '',  // Will be set from backend
   maxConcurrentDownloads: null,  // unlimited
-  segmentSizeMb: 10,
   threadCount: 8,
   speedLimitMode: 'unlimited',
   speedLimitKbps: null,

@@ -107,24 +107,6 @@ export default function AdvancedSettings() {
   return (
     <Box>
       <Stack spacing={2.5}>
-        {/* Download Settings */}
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            {t('settings.downloadSettings') || 'Download Settings'}
-          </Typography>
-          <Stack spacing={2}>
-            <TextField
-              fullWidth
-              type="number"
-              label={t('settings.segmentSize') || 'Segment Size (MB)'}
-              value={settings.segmentSizeMb}
-              onChange={(e) => setSettings({ ...settings, segmentSizeMb: parseInt(e.target.value) || 10 })}
-              slotProps={{ htmlInput: { min: 1, max: 100 } }}
-              helperText={t('settings.segmentSizeHelp') || 'Size of each download segment (1-100 MB)'}
-            />
-          </Stack>
-        </Box>
-
         {/* Speed Limit */}
         <Box>
           <Typography variant="h6" gutterBottom>

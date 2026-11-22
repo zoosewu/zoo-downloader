@@ -24,7 +24,8 @@ fn spec(dir: &Path, url: String, connections: usize) -> TransferSpec {
         name: "out.bin".into(),
         part_path: dir.join("out.bin.test.part"),
         connections,
-        segment_size: 64 * KB,
+        min_split: 64 * KB,
+        max_request: None,
         retry: RetryPolicy { max_attempts: 4, base_delay: Duration::from_millis(10), max_delay: Duration::from_millis(50) },
         decrypt: None,
     }
@@ -54,7 +55,7 @@ fn no_leftovers(dir: &Path) {
 }
 
 #[tokio::test]
-async fn segmented_download_uses_many_ranges_and_completes() {
+async fn every_connection_streams_a_range_of_its_own() {
     let fx = Fixture::start().await;
     let dir = tempfile::tempdir().unwrap();
     let size = 1000 * KB + 123;
@@ -65,8 +66,9 @@ async fn segmented_download_uses_many_ranges_and_completes() {
     assert_file(&out, size);
     assert_eq!(c.progress.downloaded(), size);
     assert_eq!(c.progress.total(), Some(size));
-    let ranged = fx.requests().iter().filter(|r| r.range.as_deref().is_some_and(|v| v != "bytes=0-0")).count();
-    assert_eq!(ranged as u64, size.div_ceil(64 * KB));
+    // One request per connection (plus a few for ranges split off at the end), not one per piece.
+    let ranged: Vec<_> = fx.requests().iter().filter_map(|r| r.range.clone()).filter(|v| v != "bytes=0-0").collect();
+    assert!((4..=8).contains(&ranged.len()), "{ranged:?}");
     no_leftovers(dir.path());
 }
 

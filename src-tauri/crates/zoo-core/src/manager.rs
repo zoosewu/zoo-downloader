@@ -21,7 +21,7 @@ use crate::store::JsonStore;
 use crate::task::{AddRequest, Config, Event, Phase, ProgressTick, SegmentMap, StartMode, Task, TaskId, TaskState, TaskUpdate};
 use crate::transfer::{self, Ctx, Progress, TransferSpec};
 use chrono::Utc;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -605,7 +605,6 @@ impl Actor {
         let task = self.task(id)?;
         let mut map = SegmentMap {
             total: task.total,
-            segment_size: self.cfg.segment_size,
             done: Vec::new(),
             active: Vec::new(),
         };
@@ -663,7 +662,8 @@ impl Actor {
             name: task.name.clone(),
             part_path: part_path_of(task),
             connections: self.cfg.connections_per_task,
-            segment_size: self.cfg.segment_size,
+            min_split: self.cfg.min_split,
+            max_request: None,
             retry: self.cfg.transfer_retry,
             decrypt: None,
         };
@@ -935,7 +935,7 @@ async fn run_job(
 ) -> Result<PathBuf, CoreError> {
     // `first`: only the first resolution may name the file.
     let (mut first, mut resolved_again, mut over_quota) = (true, false, 0);
-    let (connections, segment_size, own_headers) = (spec.connections, spec.segment_size, std::mem::take(&mut spec.headers));
+    let (connections, own_headers) = (spec.connections, std::mem::take(&mut spec.headers));
     loop {
         let report: resolve::PhaseReport = {
             let msgs = msgs.clone();
@@ -959,7 +959,7 @@ async fn run_job(
         spec.url = source.url;
         spec.headers = merge_headers(source.headers, &own_headers);
         spec.connections = source.max_connections.map_or(connections, |max| connections.min(max.max(1)));
-        spec.segment_size = source.max_segment_size.map_or(segment_size, |max| segment_size.min(max.max(1)));
+        spec.max_request = source.max_segment_size;
         spec.decrypt = source.decrypt;
         let _ = msgs.send(JobMsg::Phase(id, Phase::Transferring));
         let result = match transfer::probe_source(&spec, ctx).await {
@@ -1067,24 +1067,87 @@ async fn sleep_for(wait: Option<Duration>) {
     }
 }
 
-/// Exponentially smoothed bytes-per-second.
+/// Bytes per second over the last `SPEED_WINDOW`: the slope of the straight line that best fits
+/// the (time, downloaded) samples (least squares). Every sample counts, so a burst, or one
+/// leaving the window, barely moves it, and a stalled transfer falls smoothly to 0.
 #[derive(Default)]
 struct SpeedMeter {
-    last: Option<(Instant, u64)>,
-    rate: f64,
+    samples: VecDeque<(Instant, u64)>,
 }
+
+const SPEED_WINDOW: Duration = Duration::from_secs(5);
 
 impl SpeedMeter {
     fn sample(&mut self, downloaded: u64) -> u64 {
-        let now = Instant::now();
-        if let Some((at, bytes)) = self.last {
-            let secs = now.duration_since(at).as_secs_f64();
-            if secs > 0.0 {
-                let instant = downloaded.saturating_sub(bytes) as f64 / secs;
-                self.rate = if self.rate == 0.0 { instant } else { 0.3 * instant + 0.7 * self.rate };
-            }
+        self.sample_at(Instant::now(), downloaded)
+    }
+
+    fn sample_at(&mut self, now: Instant, downloaded: u64) -> u64 {
+        // Fewer bytes than before: the transfer started over.
+        if self.samples.back().is_some_and(|&(_, bytes)| downloaded < bytes) {
+            self.samples.clear();
         }
-        self.last = Some((now, downloaded));
-        self.rate.round() as u64
+        self.samples.push_back((now, downloaded));
+        while self.samples.front().is_some_and(|&(at, _)| now.duration_since(at) > SPEED_WINDOW) {
+            self.samples.pop_front();
+        }
+        let Some(&(t0, b0)) = self.samples.front() else { return 0 };
+        let points: Vec<(f64, f64)> =
+            self.samples.iter().map(|&(t, b)| (t.duration_since(t0).as_secs_f64(), (b - b0) as f64)).collect();
+        let n = points.len() as f64;
+        let (mx, my) = (points.iter().map(|p| p.0).sum::<f64>() / n, points.iter().map(|p| p.1).sum::<f64>() / n);
+        let spread: f64 = points.iter().map(|p| (p.0 - mx).powi(2)).sum();
+        if spread <= 0.0 {
+            return 0;
+        }
+        let slope = points.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f64>() / spread;
+        slope.max(0.0).round() as u64
+    }
+}
+
+#[cfg(test)]
+mod speed_tests {
+    use super::*;
+
+    /// `rate(i)` bytes in tick `i`, ticks 250 ms apart; the speed after each.
+    fn run(ticks: usize, rate: impl Fn(usize) -> u64) -> Vec<u64> {
+        let (mut meter, start, mut bytes) = (SpeedMeter::default(), Instant::now(), 0);
+        (0..ticks)
+            .map(|i| {
+                bytes += rate(i);
+                meter.sample_at(start + Duration::from_millis(250 * i as u64), bytes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_steady_transfer_reads_its_rate() {
+        // 250 KB per 250 ms = 1 MB/s.
+        assert!(run(40, |_| 250_000)[1..].iter().all(|&s| s == 1_000_000));
+    }
+
+    #[test]
+    fn bursts_barely_move_it() {
+        // 1 MB/s, but the bytes arrive in bursts every fourth tick.
+        let speeds = run(60, |i| if i % 4 == 0 { 1_000_000 } else { 0 });
+        let settled = &speeds[25..];
+        let (lo, hi) = (*settled.iter().min().unwrap(), *settled.iter().max().unwrap());
+        assert!(lo > 900_000 && hi < 1_100_000, "{lo}..{hi}");
+    }
+
+    #[test]
+    fn a_stall_falls_to_zero_within_the_window() {
+        let speeds = run(60, |i| if i < 30 { 250_000 } else { 0 });
+        assert!(speeds[33] > 0 && speeds[33] < 1_000_000, "falls gradually: {}", speeds[33]);
+        assert!(speeds[30..].windows(2).all(|w| w[1] <= w[0]), "never jumps back up");
+        assert_eq!(speeds[30 + 21], 0, "flat for a whole window: 0");
+    }
+
+    #[test]
+    fn starting_over_forgets_the_old_count() {
+        let (mut meter, t) = (SpeedMeter::default(), Instant::now());
+        meter.sample_at(t, 10_000_000);
+        meter.sample_at(t + Duration::from_millis(250), 10_250_000);
+        assert_eq!(meter.sample_at(t + Duration::from_millis(500), 0), 0);
     }
 }

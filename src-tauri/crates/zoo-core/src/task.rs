@@ -146,8 +146,6 @@ pub enum Phase {
 #[serde(rename_all = "camelCase")]
 pub struct SegmentMap {
     pub total: Option<u64>,
-    /// Size of the pieces the transfer hands to its connections.
-    pub segment_size: u64,
     pub done: Vec<(u64, u64)>,
     pub active: Vec<ActiveRange>,
 }
@@ -237,7 +235,8 @@ pub struct Config {
     /// `None` means unlimited.
     pub max_concurrent: Option<usize>,
     pub connections_per_task: usize,
-    pub segment_size: u64,
+    /// The least a connection's range is split into (see `transfer::run_workers`).
+    pub min_split: u64,
     /// Bytes per second across all downloads; `None` means unlimited.
     pub speed_limit: Option<u64>,
     pub auto_retry: AutoRetry,
@@ -262,7 +261,7 @@ impl Default for Config {
         Self {
             max_concurrent: Some(3),
             connections_per_task: 8,
-            segment_size: 10 * 1024 * 1024,
+            min_split: 4 * 1024 * 1024,
             speed_limit: None,
             auto_retry: AutoRetry { enabled: true, max_attempts: 3, interval: Duration::from_secs(30) },
             transfer_retry: RetryPolicy::default(),

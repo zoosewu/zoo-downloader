@@ -17,7 +17,7 @@ fn config() -> Config {
     Config {
         max_concurrent: Some(3),
         connections_per_task: 2,
-        segment_size: 64 * KB,
+        min_split: 64 * KB,
         speed_limit: None,
         auto_retry: AutoRetry { enabled: false, max_attempts: 3, interval: Duration::from_millis(50) },
         transfer_retry: RetryPolicy { max_attempts: 2, base_delay: Duration::from_millis(10), max_delay: Duration::from_millis(20) },
@@ -419,7 +419,7 @@ async fn segment_map_follows_the_task_through_running_paused_and_completed() {
     wait_until(&m, id, 15, |t| t.downloaded > 100 * KB).await;
 
     let running = m.segments(id).await.unwrap();
-    assert_eq!((running.total, running.segment_size), (Some(size), 64 * KB));
+    assert_eq!(running.total, Some(size));
     assert!(!running.active.is_empty(), "connections are fetching");
     assert!(running.active.len() <= 2, "at most connections_per_task ranges in flight");
     assert!(running.active.iter().all(|r| r.start < r.end && r.end <= size && !r.retrying));

@@ -7,7 +7,7 @@ export type AppSettings = {
 /**
  * A language code ("zh-TW", "en", "ja", or one of the user's files); "" follows the system.
  */
-language: string, theme: Theme, defaultDownloadDir: string, maxConcurrentDownloads: number | null, segmentSizeMb: number, threadCount: number, speedLimitMode: SpeedLimitMode, speedLimitKbps: number | null, enableProxy: boolean, 
+language: string, theme: Theme, defaultDownloadDir: string, maxConcurrentDownloads: number | null, threadCount: number, speedLimitMode: SpeedLimitMode, speedLimitKbps: number | null, enableProxy: boolean, 
 /**
  * When every proxy is unusable, connect directly instead of failing.
  */
