@@ -102,9 +102,7 @@ const SegmentVisualization: React.FC<SegmentVisualizationProps> = ({ task }) => 
       <SegmentCanvas
         cells={cells}
         colors={colors}
-        describe={(cell) =>
-          `#${cell.index + 1} · ${formatBytes(cell.start)} – ${formatBytes(cell.end)} · ${Math.floor(cell.done * 100)}% · ${t(`downloads.segments.${cell.status}`)}`
-        }
+        describe={(cell) => `#${cell.index + 1} · ${formatBytes(cell.end - cell.start)}`}
       />
     </Box>
   );
