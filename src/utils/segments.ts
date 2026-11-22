@@ -1,7 +1,11 @@
 // Turns a backend SegmentMap into fixed-size cells for the segment grid.
 import type { SegmentMap } from '../backend';
 
-export type CellStatus = 'pending' | 'partial' | 'downloading' | 'retrying' | 'completed';
+/**
+ * `downloading` / `retrying`: a connection writes in this cell now (one cell per connection).
+ * `claimed`: a connection will get to it; `pending`: no connection has it yet.
+ */
+export type CellStatus = 'pending' | 'claimed' | 'partial' | 'downloading' | 'retrying' | 'completed';
 
 export interface SegmentCell {
   index: number;
@@ -39,14 +43,16 @@ export function buildSegmentCells(map: SegmentMap, maxCells = MAX_CELLS, cellByt
     while (first < done.length && done[first][1] <= start) first++;
     let covered = 0;
     for (let i = first; i < done.length && done[i][0] < end; i++) covered += overlap(start, end, done[i][0], done[i][1]);
-    const active = map.active.filter((r) => overlap(start, end, r.start, r.end) > 0);
+    // A connection's range runs from where it writes next (`start`) to the end of its claim.
+    const writing = map.active.filter((r) => r.start >= start && r.start < end);
     const share = covered / (end - start);
 
     let status: CellStatus;
     if (share >= 1) status = 'completed';
-    else if (active.some((r) => r.retrying)) status = 'retrying';
-    else if (active.length > 0) status = 'downloading';
+    else if (writing.some((r) => r.retrying)) status = 'retrying';
+    else if (writing.length > 0) status = 'downloading';
     else if (covered > 0) status = 'partial';
+    else if (map.active.some((r) => overlap(start, end, r.start, r.end) > 0)) status = 'claimed';
     else status = 'pending';
 
     return { index, start, end, status, done: share };

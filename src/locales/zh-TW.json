@@ -94,7 +94,8 @@
       "partial": "部分完成",
       "downloading": "下載中",
       "retrying": "等待重試",
-      "pending": "未開始",
+      "claimed": "已認領",
+      "pending": "未認領",
       "unknownSize": "伺服器未提供檔案大小，無法顯示分段。"
     },
     "phase": {

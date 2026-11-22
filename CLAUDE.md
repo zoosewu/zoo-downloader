@@ -460,7 +460,8 @@ chmod +x .git/hooks/pre-commit
 - Monospace 字體顯示檔案路徑
 
 **SegmentVisualization** (`src/components/SegmentVisualization.tsx`)
-- canvas（`SegmentCanvas`）：每格 100 KB，最多 3000 格（大檔案每格放大），8px 方格、2px 間距；只重畫狀態改變的格子
+- canvas（`SegmentCanvas`）：每格 100 KB，最多 3000 格（大檔案每格放大），8px 方格、2px 間距；只重畫狀態改變的格子（先清再畫，顏色半透明）
+- 顏色：藍色是連線正在寫的那一格（每條連線一格），灰色是已被連線認領，深灰色是沒有連線認領
 - 速度（zoo-core `SpeedMeter`）：最近 5 秒取樣的最小平方法斜率
 - 圖例顯示顏色含義
 - 可滾動處理大量分段

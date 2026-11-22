@@ -55,8 +55,11 @@ const SegmentCanvas: React.FC<Props> = ({ cells, colors, describe }) => {
     }
     cells.forEach((s, i) => {
       if (!all && last.statuses[i] === s.status) return;
+      const [x, y] = [(i % columns) * pitch, Math.floor(i / columns) * pitch];
+      // The colors are translucent: painted over the old one they would blend with it.
+      if (!all) ctx.clearRect(x, y, cell, cell);
       ctx.fillStyle = colors[s.status];
-      ctx.fillRect((i % columns) * pitch, Math.floor(i / columns) * pitch, cell, cell);
+      ctx.fillRect(x, y, cell, cell);
     });
     painted.current = { layout, colors, statuses: cells.map((s) => s.status) };
   }, [cells, colors, width, columns, rows, pitch, cell, gap]);

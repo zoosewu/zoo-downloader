@@ -14,7 +14,8 @@ function useCellColors(): Record<CellStatus, string> {
   const { palette } = useTheme();
   return useMemo(
     () => ({
-      pending: alpha(palette.text.primary, 0.14),
+      pending: alpha(palette.text.primary, 0.07),
+      claimed: alpha(palette.text.primary, 0.22),
       partial: alpha(palette.success.main, 0.45),
       downloading: palette.info.main,
       retrying: palette.error.main,
@@ -24,7 +25,7 @@ function useCellColors(): Record<CellStatus, string> {
   );
 }
 
-const LEGEND: CellStatus[] = ['completed', 'partial', 'downloading', 'retrying', 'pending'];
+const LEGEND: CellStatus[] = ['completed', 'partial', 'downloading', 'retrying', 'claimed', 'pending'];
 
 interface SegmentVisualizationProps {
   task: Task;

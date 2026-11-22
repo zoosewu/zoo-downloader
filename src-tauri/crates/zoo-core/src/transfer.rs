@@ -19,7 +19,6 @@ use futures_util::StreamExt;
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, LAST_MODIFIED, RANGE};
 use reqwest::{Response, StatusCode};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -96,8 +95,8 @@ pub struct Progress {
     total: AtomicU64,
     /// The part file while a ranged transfer runs; `None` in stream mode or between attempts.
     part: Mutex<Option<Arc<PartFile>>>,
-    /// What each worker is fetching right now, by worker index.
-    active: Mutex<BTreeMap<usize, ActiveRange>>,
+    /// Who fetches what while a ranged transfer runs.
+    plan: Mutex<Option<Arc<Plan>>>,
 }
 
 const UNKNOWN: u64 = u64::MAX;
@@ -108,7 +107,7 @@ impl Default for Progress {
             downloaded: AtomicU64::new(0),
             total: AtomicU64::new(UNKNOWN),
             part: Mutex::new(None),
-            active: Mutex::new(BTreeMap::new()),
+            plan: Mutex::new(None),
         }
     }
 }
@@ -125,21 +124,17 @@ impl Progress {
     /// Finished and in-flight ranges of a running ranged transfer; `None` in stream mode.
     pub fn segments(&self) -> Option<(Vec<(u64, u64)>, Vec<ActiveRange>)> {
         let done = self.part.lock().unwrap().as_ref()?.done_ranges();
-        let active = self.active.lock().unwrap().values().copied().collect();
+        let active = self.plan.lock().unwrap().as_ref().map(|plan| plan.active()).unwrap_or_default();
         Some((done, active))
     }
 
     fn set_part(&self, part: Option<Arc<PartFile>>) {
         *self.part.lock().unwrap() = part;
-        self.active.lock().unwrap().clear();
+        *self.plan.lock().unwrap() = None;
     }
 
-    fn set_active(&self, worker: usize, range: Option<ActiveRange>) {
-        let mut active = self.active.lock().unwrap();
-        match range {
-            Some(r) => active.insert(worker, r),
-            None => active.remove(&worker),
-        };
+    fn set_plan(&self, plan: Option<Arc<Plan>>) {
+        *self.plan.lock().unwrap() = plan;
     }
 
     pub fn downloaded(&self) -> u64 {
@@ -420,15 +415,14 @@ fn samples(done: &[(u64, u64)]) -> Vec<Range<u64>> {
 async fn run_workers(spec: &TransferSpec, ctx: &Ctx, part: &Arc<PartFile>) -> Result<(), SegmentError> {
     let workers = spec.connections.max(1);
     let plan = Arc::new(Plan::new(part.missing(), workers, spec.min_split));
+    ctx.progress.set_plan(Some(plan.clone()));
 
     let mut set = JoinSet::new();
     let spec = Arc::new(spec.clone());
     for id in 0..workers {
         let (plan, part, ctx, spec) = (plan.clone(), part.clone(), ctx.clone(), spec.clone());
         set.spawn(async move {
-            let result = worker(id, &spec, &plan, &part, &ctx).await;
-            ctx.progress.set_active(id, None);
-            result
+            worker(id, &spec, &plan, &part, &ctx).await
         });
     }
     let mut failure = None;
@@ -440,11 +434,6 @@ async fn run_workers(spec: &TransferSpec, ctx: &Ctx, part: &Arc<PartFile>) -> Re
         }
     }
     failure.map_or(Ok(()), Err)
-}
-
-/// Show what `worker` is fetching (or waiting to retry) in the segment picture.
-fn mark(ctx: &Ctx, worker: usize, range: &Range<u64>, retrying: bool) {
-    ctx.progress.set_active(worker, Some(ActiveRange { start: range.start, end: range.end, retrying }));
 }
 
 /// A worker's range splits only when the other worker keeps at least this many seconds of
@@ -468,6 +457,8 @@ struct Slot {
     left: Range<u64>,
     fetched: u64,
     since: Instant,
+    /// Its last attempt failed; it waits to try again.
+    retrying: bool,
 }
 
 impl Slot {
@@ -523,7 +514,7 @@ impl Plan {
         };
         match taken {
             Some((range, robbed)) => {
-                st.slots[worker] = Some(Slot { left: range.clone(), fetched: 0, since: Instant::now() });
+                st.slots[worker] = Some(Slot { left: range.clone(), fetched: 0, since: Instant::now(), retrying: false });
                 Some((range, robbed))
             }
             None => {
@@ -531,6 +522,23 @@ impl Plan {
                 st.workers -= 1;
                 None
             }
+        }
+    }
+
+    /// Each working connection: where it writes next (`start`) and the end of what it has left.
+    fn active(&self) -> Vec<ActiveRange> {
+        let st = self.0.lock().unwrap();
+        st.slots
+            .iter()
+            .flatten()
+            .filter(|s| !s.left.is_empty())
+            .map(|s| ActiveRange { start: s.left.start, end: s.left.end, retrying: s.retrying })
+            .collect()
+    }
+
+    fn set_retrying(&self, worker: usize, retrying: bool) {
+        if let Some(slot) = self.0.lock().unwrap().slots[worker].as_mut() {
+            slot.retrying = retrying;
         }
     }
 
@@ -576,11 +584,7 @@ fn connection_refused(e: &CoreError) -> bool {
 }
 
 async fn worker(id: usize, spec: &TransferSpec, plan: &Plan, part: &PartFile, ctx: &Ctx) -> Result<(), SegmentError> {
-    while let Some((range, robbed)) = plan.next(id, spec.min_split) {
-        if let Some((victim, kept)) = robbed {
-            mark(ctx, victim, &kept, false);
-        }
-        mark(ctx, id, &range, false);
+    while plan.next(id, spec.min_split).is_some() {
         let (retry, mut attempt) = (spec.retry, 0);
         loop {
             let left = plan.left(id);
@@ -601,9 +605,9 @@ async fn worker(id: usize, spec: &TransferSpec, plan: &Plan, part: &PartFile, ct
                     // Progress earns a fresh set of attempts; only a stuck range gives up.
                     attempt = if reached > request.start { 1 } else { attempt + 1 };
                     if attempt < retry.max_attempts {
-                        mark(ctx, id, &plan.left(id), true);
+                        plan.set_retrying(id, true);
                         sleep_or_cancel(retry.delay(attempt), &ctx.cancel).await?;
-                        mark(ctx, id, &plan.left(id), false);
+                        plan.set_retrying(id, false);
                         continue;
                     }
                     e
@@ -859,6 +863,22 @@ mod tests {
         assert!(!plan.hand_back(1), "the last worker keeps its range");
         assert_eq!(plan.claim(1, 0, 100), 100);
         assert_eq!(plan.next(1, 1000).unwrap().0, 150..1000);
+    }
+
+    #[test]
+    fn active_ranges_run_from_where_each_connection_writes() {
+        let plan = Plan::new(vec![0..1000], 2, 100);
+        plan.next(0, 100);
+        plan.next(1, 100);
+        plan.claim(1, 500, 120);
+        plan.set_retrying(0, true);
+        assert_eq!(
+            plan.active(),
+            vec![
+                ActiveRange { start: 0, end: 500, retrying: true },
+                ActiveRange { start: 620, end: 1000, retrying: false }
+            ]
+        );
     }
 
     #[test]

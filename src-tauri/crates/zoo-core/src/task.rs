@@ -150,11 +150,13 @@ pub struct SegmentMap {
     pub active: Vec<ActiveRange>,
 }
 
-/// A range one connection is fetching right now.
+/// What one connection has claimed and not fetched yet.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveRange {
+    /// The next byte it writes.
     pub start: u64,
+    /// The end of what it has claimed.
     pub end: u64,
     /// The last attempt failed and the connection is waiting to retry.
     pub retrying: bool,

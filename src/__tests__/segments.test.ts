@@ -22,15 +22,24 @@ describe('buildSegmentCells', () => {
     ]);
   });
 
-  test('status reflects done ranges and connections', () => {
+  test('a connection writes in one cell; the rest of its claim is claimed', () => {
     const cells = cells100({
-      done: [[0, 150]],
+      total: 700,
+      done: [[0, 150], [500, 550]],
       active: [
-        { start: 200, end: 300, retrying: false },
-        { start: 300, end: 400, retrying: true },
+        { start: 150, end: 400, retrying: false },
+        { start: 400, end: 500, retrying: true },
       ],
     });
-    expect(cells.map((c) => c.status)).toEqual(['completed', 'partial', 'downloading', 'retrying']);
+    expect(cells.map((c) => c.status)).toEqual([
+      'completed',
+      'downloading', // it writes at 150
+      'claimed',
+      'claimed',
+      'retrying', // the other waits to write at 400
+      'partial', // stopped there, nobody has it now
+      'pending',
+    ]);
     expect(cells[1].done).toBeCloseTo(0.5);
   });
 

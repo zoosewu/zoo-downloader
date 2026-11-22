@@ -94,7 +94,8 @@
       "partial": "一部完了",
       "downloading": "ダウンロード中",
       "retrying": "再試行待ち",
-      "pending": "未開始",
+      "claimed": "割り当て済み",
+      "pending": "未割り当て",
       "unknownSize": "サーバーがファイルサイズを返さなかったため、セグメントを表示できません。"
     },
     "phase": {

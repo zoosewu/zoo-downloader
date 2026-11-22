@@ -94,7 +94,8 @@
       "partial": "Partly done",
       "downloading": "Downloading",
       "retrying": "Waiting to retry",
-      "pending": "Not started",
+      "claimed": "Claimed",
+      "pending": "Unclaimed",
       "unknownSize": "The server did not report a file size, so segments cannot be shown."
     },
     "phase": {
