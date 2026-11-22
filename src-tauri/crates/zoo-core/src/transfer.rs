@@ -9,6 +9,7 @@
 //! Cancelling keeps a ranged part file for a later resume; the caller decides whether to
 //! discard it.
 
+use crate::cipher::Decrypt;
 use crate::connection::{ConnectionSource, Lease, Outcome};
 use crate::error::CoreError;
 use crate::part_file::{PartFile, Previous, Validator};
@@ -17,6 +18,7 @@ use crate::task::ActiveRange;
 use futures_util::StreamExt;
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, LAST_MODIFIED, RANGE};
 use reqwest::{Response, StatusCode};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::ops::Range;
@@ -44,6 +46,22 @@ pub struct TransferSpec {
     pub connections: usize,
     pub segment_size: u64,
     pub retry: RetryPolicy,
+    /// The server's bytes are encrypted: decrypted before they are written (or compared).
+    pub decrypt: Option<Decrypt>,
+}
+
+impl TransferSpec {
+    /// The server's `bytes` at `offset` as the file holds them.
+    fn plain<'a>(&self, offset: u64, bytes: &'a [u8]) -> Cow<'a, [u8]> {
+        match &self.decrypt {
+            None => Cow::Borrowed(bytes),
+            Some(decrypt) => {
+                let mut plain = bytes.to_vec();
+                decrypt.apply(offset, &mut plain);
+                Cow::Owned(plain)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -335,7 +353,7 @@ async fn verify(spec: &TransferSpec, ctx: &Ctx, part: &PartFile) -> Result<(), C
         let mut ours = vec![0; (range.end - range.start) as usize];
         part.read_at(range.start, &mut ours)?;
         let theirs = with_retry(spec.retry, &ctx.cancel, || fetch_sample(spec, ctx, range.clone())).await?;
-        if theirs != ours {
+        if *spec.plain(range.start, &theirs) != ours[..] {
             return Err(CoreError::SourceChanged(format!("bytes {}-{} differ", range.start, range.end - 1)));
         }
     }
@@ -538,7 +556,7 @@ async fn fetch_range(spec: &TransferSpec, range: Range<u64>, part: &PartFile, ct
             };
             let len = chunk.len().min((range.end - offset) as usize);
             ctx.rate.acquire(len as u64).await;
-            part.write_at(offset, &chunk[..len])?;
+            part.write_at(offset, &spec.plain(offset, &chunk[..len]))?;
             offset += len as u64;
             ctx.progress.add(len as u64);
         }
@@ -577,7 +595,7 @@ async fn stream(spec: &TransferSpec, ctx: &Ctx, mut first: Option<Response>) -> 
                     },
                 };
                 ctx.rate.acquire(chunk.len() as u64).await;
-                part.write_at(offset, &chunk)?;
+                part.write_at(offset, &spec.plain(offset, &chunk))?;
                 offset += chunk.len() as u64;
                 ctx.progress.add(chunk.len() as u64);
             }

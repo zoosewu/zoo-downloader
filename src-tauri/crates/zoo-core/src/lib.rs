@@ -5,6 +5,7 @@
 //! Design: docs/architecture/phase-2-download-core.md
 
 pub mod category;
+pub mod cipher;
 pub mod connection;
 pub mod error;
 pub mod manager;

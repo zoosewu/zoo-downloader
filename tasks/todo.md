@@ -229,3 +229,26 @@
 - [x] B app 內建引導：安裝包附擴充資料夾；設定「一般 → 瀏覽器擴充」偵測 Edge／Chrome，按鈕把擴充頁面網址放進剪貼簿並叫出瀏覽器（瀏覽器不讓其他程式直接開 edge://、chrome:// 頁面，Edge 只會開空白分頁），以及顯示擴充資料夾
 - [x] A 上架 Edge 附加元件商店（v0.2.4，2026-11-18）：商店 ID `bhgmngdlfelamchfhlahkkclffhpgfma` 已加進 `zoo-native-host` 的 `EXTENSION_IDS`；設定頁的 Edge、Chrome 按鈕都開 Edge 商店頁面（Chrome 也能從 Edge 商店安裝）
   - 不上架 Chrome 線上應用程式商店（2026-11-19 使用者決定）：Chrome 使用者用 Edge 商店
+
+# MEGA 模組（2026-11-22）
+
+MEGA 檔案在伺服器上是密文（AES-128-CTR，金鑰在連結 `#` 後面），所以 app 要能邊下載邊解密，模組只回傳金鑰。
+
+## A. app（新 API level 4，發布 0.3.0）
+- [x] SDK `Resolved.decrypt?: { cipher: 'aes-128-ctr', key, iv }`（hex）；protocol.rs `Resolved`、zoo-core `Source` 同步；level 4 才能用
+- [x] zoo-core 解密：`TransferSpec` 帶 cipher，兩處 `part.write_at` 前依 offset 套 keystream（`aes` + `ctr` crate，可任意位置開始，分段與續傳照常）；續傳的抽樣比對（verify）先解密再比
+- [x] 額度用完：下載中收到 HTTP 509 → 回模組重新解析（不限一次），模組等完再給連結，從斷點續傳
+- [x] 測試：已知明文/密文的分段下載、續傳、509 後重新解析；文件 module-versions.md 加 level 4
+- 不做（先記著）：MEGA 的整檔 MAC 驗證
+
+## B. 模組 `mega`（marketplace，apiVersion 4）
+- [x] 網址：`mega.nz/file/<h>#<key>`、`mega.nz/folder/<h>#<key>`（含 `/file/<子檔>`）、舊式 `#!h!key`、`#F!`、mega.co.nz
+- [x] resolve：`POST https://g.api.mega.co.nz/cs?id=<n>` `[{"a":"g","g":1,"ssl":2,"p":h}]`；`at` 用 AES-CBC 解出檔名（純 JS AES，host 的 crypto.subtle 只有雜湊）；錯誤 -9 已刪除、-16 被封鎖、-11 無權限、-17 額度
+- [x] 額度：回傳前對下載網址送 1 byte 的 Range 試探；509 時讀 `x-mega-time-left`（秒）用 zoo.wait 分段等，等完再試（app 顯示倒數，可暫停）
+- [x] list：資料夾 `{"a":"f","c":1,"ca":1,"r":1}` + `?n=<資料夾>`，子檔金鑰用資料夾金鑰 AES-ECB 解；每個檔案的網址 `…/folder/<h>#<key>/file/<子檔>`，resolve 用 `{"a":"g","g":1,"n":<子檔>}` + `?n=`
+- [x] 錄影測試：單檔、單檔的清單、embed、已刪除、缺金鑰
+- [ ] 資料夾：程式已寫，缺真的資料夾連結錄影
+- [ ] 額度用完（509）：zoo-core 測試涵蓋重新解析；模組的等待未在真站遇到
+
+## 結果
+- dev app 端到端：858 MB 的 RAR 下載約 40 MB（8 個並行分段、暫停後續傳），暫存檔的 8 段與 node 自己解密的 MEGA 位元組逐一相同，檔頭 `Rar!`

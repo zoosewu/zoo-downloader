@@ -136,6 +136,17 @@ with `error: 'Wrong code'` (that always asks). Use `secret: true` for passwords.
 `"apiVersion": 3`. Values the user keeps for every download (an account) belong in manifest
 `permissions.credentials`, not here.
 
+**Files the server keeps encrypted** (MEGA: the key is in the link): return the key and let the
+app decrypt as it downloads; never download the file yourself.
+`return { url, filename, decrypt: { cipher: 'aes-128-ctr', key: hex(key), iv: hex(iv) } };`
+The host's `crypto.subtle` only hashes: bundle a small AES library for anything the module must
+decrypt itself (names, keys). Needs `"apiVersion": 4`.
+
+**Transfer quotas** (HTTP 509 when the site's free allowance is used up): the app asks `resolve`
+again when the download gets 509, and resumes where it stopped. Have `resolve` check whether the
+site serves now (a one-byte `Range` request to the link) and `zoo.wait` out what the site says is
+left before returning the link.
+
 **Pretend to be the site's own downloader.** Some sites only serve their own client. Set its
 User-Agent on `fetch` and in the result:
 `return { url: dlink, headers: { 'User-Agent': 'netdisk;7.42.0.5;PC;PC-Windows;10.0.22631;WindowsBaiduYunGuanJia' } };`

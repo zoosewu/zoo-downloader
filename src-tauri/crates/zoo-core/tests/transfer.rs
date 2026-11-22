@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use zoo_core::connection::Direct;
 use zoo_core::rate::RateLimiter;
 use zoo_core::transfer::{self, Ctx, Progress, RetryPolicy, TransferSpec};
+use zoo_core::cipher::Decrypt;
 use zoo_core::CoreError;
 
 const KB: u64 = 1024;
@@ -25,6 +26,7 @@ fn spec(dir: &Path, url: String, connections: usize) -> TransferSpec {
         connections,
         segment_size: 64 * KB,
         retry: RetryPolicy { max_attempts: 4, base_delay: Duration::from_millis(10), max_delay: Duration::from_millis(50) },
+        decrypt: None,
     }
 }
 
@@ -275,4 +277,52 @@ async fn speed_limit_is_respected() {
 
     let secs = started.elapsed().as_secs_f64();
     assert!(secs >= 1.8, "finished in {secs}s, faster than the limit allows");
+}
+
+const DECRYPT: Decrypt = Decrypt::Aes128Ctr { key: *b"0123456789abcdef", iv: [9, 8, 7, 6, 5, 4, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0] };
+
+/// The fixture's bytes, decrypted: what the file must hold (CTR is its own inverse).
+fn decrypted(size: u64) -> Vec<u8> {
+    let mut data = expected(size);
+    DECRYPT.apply(0, &mut data);
+    data
+}
+
+#[tokio::test]
+async fn encrypted_files_are_saved_decrypted() {
+    let fx = Fixture::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 300 * KB + 7;
+    for (name, query, connections) in [("segments.bin", "", 4), ("stream.bin", "?norange", 1)] {
+        let mut s = spec(dir.path(), fx.url(&format!("/file/{size}{query}")), connections);
+        s.name = name.into();
+        s.part_path = dir.path().join(format!("{name}.part"));
+        s.decrypt = Some(DECRYPT);
+        let out = transfer::run(&s, &ctx(None)).await.unwrap();
+        assert!(std::fs::read(&out).unwrap() == decrypted(size), "{name}: content mismatch");
+    }
+}
+
+#[tokio::test]
+async fn a_resumed_encrypted_file_is_checked_against_its_decrypted_bytes() {
+    let fx = Fixture::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 1024 * KB;
+    let url = fx.url(&format!("/file/{size}?delay_ms=5"));
+    let encrypted = |connections| TransferSpec { decrypt: Some(DECRYPT), ..spec(dir.path(), url.clone(), connections) };
+
+    let first = ctx(None);
+    let (cancel, progress) = (first.cancel.clone(), first.progress.clone());
+    let s = encrypted(1);
+    let run = tokio::spawn(async move { transfer::run(&s, &first).await });
+    while progress.downloaded() < 128 * KB {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    cancel.cancel();
+    let _ = run.await.unwrap();
+
+    // Another ETag: the kept bytes are sampled against the server's, decrypted the same way.
+    fx.set_etag("v2");
+    let out = transfer::run(&encrypted(2), &ctx(None)).await.unwrap();
+    assert!(std::fs::read(&out).unwrap() == decrypted(size), "content mismatch");
 }

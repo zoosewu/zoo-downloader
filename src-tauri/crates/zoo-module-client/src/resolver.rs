@@ -4,6 +4,7 @@
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use zoo_core::cipher::Decrypt;
 use zoo_core::resolve::{Memory, PhaseReport, Resolving};
 use zoo_core::{Answers, CoreError, Phase, Resolver, Source};
 
@@ -89,6 +90,11 @@ impl Resolver for ModuleResolver {
                 .resolve(installed.module, url, installed.limits, &call)
                 .await
                 .map_err(|e| core_error(&id, e))?;
+            // The host checked the keys; saving the encrypted bytes is never a fallback.
+            let decrypt = match resolved.decrypt.as_ref().map(|e| e.aes128_ctr()).transpose() {
+                Ok(keys) => keys.map(|(key, iv)| Decrypt::Aes128Ctr { key, iv }),
+                Err(why) => return Err(CoreError::Resolve { message: format!("{id}: {why}"), hint: None, retryable: false }),
+            };
             Ok(Source {
                 url: resolved.url,
                 headers: resolved.headers.into_iter().collect(),
@@ -96,6 +102,7 @@ impl Resolver for ModuleResolver {
                 max_connections: resolved.max_connections.map(|n| n as usize),
                 max_segment_size: resolved.max_segment_size,
                 expires: true,
+                decrypt,
             })
         })
     }

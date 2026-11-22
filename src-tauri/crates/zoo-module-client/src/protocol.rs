@@ -80,6 +80,50 @@ pub struct Resolved {
     /// The largest byte range the site serves in one request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_segment_size: Option<u64>,
+    /// The server sends the file encrypted; the app decrypts it as it downloads (API level 4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decrypt: Option<Encryption>,
+}
+
+/// How a resolved file is encrypted. Keys are hex.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "cipher", deny_unknown_fields)]
+pub enum Encryption {
+    /// AES-128 in counter mode; `iv` is the 128-bit big-endian counter block for byte 0.
+    #[serde(rename = "aes-128-ctr")]
+    Aes128Ctr { key: String, iv: String },
+}
+
+impl std::fmt::Debug for Encryption {
+    // Never the key.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Encryption::Aes128Ctr { .. } => f.write_str("Aes128Ctr"),
+        }
+    }
+}
+
+impl Encryption {
+    /// AES-128-CTR's key and initial counter block, or why they are unusable.
+    pub fn aes128_ctr(&self) -> Result<([u8; 16], [u8; 16]), String> {
+        match self {
+            Encryption::Aes128Ctr { key, iv } => Ok((
+                bytes16(key).ok_or("decrypt.key must be 32 hex digits (16 bytes)")?,
+                bytes16(iv).ok_or("decrypt.iv must be 32 hex digits (16 bytes)")?,
+            )),
+        }
+    }
+}
+
+fn bytes16(hex: &str) -> Option<[u8; 16]> {
+    if hex.len() != 32 || !hex.is_ascii() {
+        return None;
+    }
+    let mut out = [0; 16];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
 }
 
 /// Most files one `list` call may return.
@@ -218,6 +262,21 @@ mod tests {
     }
 
     #[test]
+    fn decrypt_keys_are_hex() {
+        let wire = json!({ "url": "https://x", "decrypt": { "cipher": "aes-128-ctr", "key": "000102030405060708090a0b0c0d0e0f", "iv": "ff".repeat(16) } });
+        let resolved: Resolved = serde_json::from_value(wire).unwrap();
+        let (key, iv) = resolved.decrypt.unwrap().aes128_ctr().unwrap();
+        assert_eq!(key, std::array::from_fn::<u8, 16, _>(|i| i as u8));
+        assert_eq!(iv, [0xff; 16]);
+        let short = Encryption::Aes128Ctr { key: "00".into(), iv: "ff".repeat(16) };
+        assert!(short.aes128_ctr().unwrap_err().contains("decrypt.key"));
+        let unknown = json!({ "url": "https://x", "decrypt": { "cipher": "rot13" } });
+        assert!(serde_json::from_value::<Resolved>(unknown).is_err());
+        // Never printed.
+        assert_eq!(format!("{short:?}"), "Aes128Ctr");
+    }
+
+    #[test]
     fn reply_wire_shape_and_roundtrip() {
         let replies = [
             Reply::Resolved {
@@ -229,6 +288,7 @@ mod tests {
                     size: Some(10),
                     max_connections: Some(2),
                     max_segment_size: Some(4 << 20),
+                    decrypt: Some(Encryption::Aes128Ctr { key: "00".repeat(16), iv: "ff".repeat(16) }),
                 },
             },
             Reply::Failed { id: 2, error: ModuleError::Timeout { limit_ms: 5 } },

@@ -116,6 +116,25 @@ async fn ask_needs_api_level_3() {
 }
 
 #[tokio::test]
+async fn decrypt_reaches_the_app_from_api_level_4() {
+    let dir = TempDir::new().unwrap();
+    let code = "export default { async resolve() { return { url: 'https://cdn.example/f', decrypt: { cipher: 'aes-128-ctr', key: '00'.repeat(16), iv: 'ff'.repeat(16) } }; } };";
+    let resolved = loopback_host().resolve(module(&dir, "mega", code), "https://page/", limits(5_000), &User::default()).await.unwrap();
+    assert_eq!(resolved.decrypt.unwrap().aes128_ctr().unwrap(), ([0; 16], [0xff; 16]));
+
+    let old = zoo_module_client::ModuleRef { api_version: 3, ..module(&dir, "old", code) };
+    match loopback_host().resolve(old, "https://page/", limits(5_000), &User::default()).await {
+        Err(ModuleError::Script { message, .. }) => assert!(message.contains("\"apiVersion\": 4"), "{message}"),
+        other => panic!("expected script error, got {other:?}"),
+    }
+    let bad = module(&dir, "bad", &code.replace("'00'.repeat(16)", "'zz'"));
+    match loopback_host().resolve(bad, "https://page/", limits(5_000), &User::default()).await {
+        Err(ModuleError::Script { message, .. }) => assert!(message.contains("decrypt.key"), "{message}"),
+        other => panic!("expected script error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn declined_captcha_fails_the_call() {
     let dir = TempDir::new().unwrap();
     let m = module(&dir, "declined", "export default { async resolve(url, zoo) { await zoo.captcha.recaptcha({ siteKey: 'k', pageUrl: url }); } };");

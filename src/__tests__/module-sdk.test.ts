@@ -76,7 +76,7 @@ describe('module SDK types', () => {
     `);
     expect(errors).toHaveLength(3);
     // Typos name the field and list the valid ones.
-    expect(errors[1]).toContain("'fileName' is not a Resolved field (url, filename, headers, size, maxConnections, maxSegmentSize)");
+    expect(errors[1]).toContain("'fileName' is not a Resolved field (url, filename, headers, size, maxConnections, maxSegmentSize, decrypt)");
   });
 
   test('list type-checks, and a file without a name is reported', () => {

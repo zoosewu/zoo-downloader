@@ -202,7 +202,8 @@ async fn execute(runtime: &mut JsRuntime, entry: &ModuleSpecifier, work: Work<'_
         deno_core::scope!(scope, runtime);
         v8::Local::new(scope, value).to_rust_string_lossy(scope)
     };
-    outcome(&json, work)
+    let level = *runtime.op_state().borrow().borrow::<ApiLevel>();
+    outcome(&json, work, level)
 }
 
 /// The JSON `__zooRun` settles with (see bootstrap.js).
@@ -215,11 +216,11 @@ enum Outcome {
     Checked(serde::de::IgnoredAny),
 }
 
-fn outcome(json: &str, work: Work) -> Result<Done, ModuleError> {
+fn outcome(json: &str, work: Work, level: ApiLevel) -> Result<Done, ModuleError> {
     match serde_json::from_str::<Outcome>(json) {
         Ok(Outcome::Ok(value)) => match work {
             Work::List(url) => validate_list(value, url).map(Done::Listed),
-            _ => validate(value).map(Done::Resolved),
+            _ => validate(value, level).map(Done::Resolved),
         },
         Ok(Outcome::Checked(_)) => Ok(Done::Loaded),
         Ok(Outcome::Err { message, hint, stack }) => Err(ModuleError::Script { message, hint, stack }),
@@ -228,7 +229,7 @@ fn outcome(json: &str, work: Work) -> Result<Done, ModuleError> {
     }
 }
 
-fn validate(value: serde_json::Value) -> Result<Resolved, ModuleError> {
+fn validate(value: serde_json::Value, level: ApiLevel) -> Result<Resolved, ModuleError> {
     let invalid = |message: String| ModuleError::Script { message, hint: Some(RESULT_HINT.into()), stack: None };
     let resolved: Resolved =
         serde_json::from_value(value).map_err(|e| invalid(format!("resolve returned an invalid result: {e}")))?;
@@ -236,6 +237,12 @@ fn validate(value: serde_json::Value) -> Result<Resolved, ModuleError> {
         return Err(invalid(format!(
             "resolve returned maxSegmentSize below {MIN_SEGMENT_SIZE} bytes; set it only to the largest range the site serves"
         )));
+    }
+    if let Some(encryption) = &resolved.decrypt {
+        if level.0 < 4 {
+            return Err(invalid("resolve returned decrypt, which needs \"apiVersion\": 4 in manifest.json".into()));
+        }
+        encryption.aes128_ctr().map_err(|why| invalid(format!("resolve returned an unusable decrypt: {why}")))?;
     }
     if resolved.max_connections == Some(0) {
         return Err(invalid("resolve returned maxConnections 0; use at least 1, or leave it out".into()));

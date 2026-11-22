@@ -30,6 +30,8 @@ use tokio_util::sync::CancellationToken;
 
 const TICK: Duration = Duration::from_millis(250);
 const EVENT_BUFFER: usize = 1024;
+/// Re-resolutions after the site's bandwidth limit (HTTP 509) in one run of a task.
+const MAX_QUOTA_ROUNDS: u32 = 20;
 
 #[derive(Clone)]
 pub struct DownloadManager {
@@ -663,6 +665,7 @@ impl Actor {
             connections: self.cfg.connections_per_task,
             segment_size: self.cfg.segment_size,
             retry: self.cfg.transfer_retry,
+            decrypt: None,
         };
         let ctx = Ctx {
             conn: self.conn.clone(),
@@ -930,7 +933,8 @@ async fn run_job(
     may_rename: bool,
     msgs: &mpsc::UnboundedSender<JobMsg>,
 ) -> Result<PathBuf, CoreError> {
-    let mut resolved_again = false;
+    // `first`: only the first resolution may name the file.
+    let (mut first, mut resolved_again, mut over_quota) = (true, false, 0);
     let (connections, segment_size, own_headers) = (spec.connections, spec.segment_size, std::mem::take(&mut spec.headers));
     loop {
         let report: resolve::PhaseReport = {
@@ -947,7 +951,7 @@ async fn run_job(
         let _ = msgs.send(JobMsg::Answers(id, memory.lock().unwrap().clone()));
         let source = resolved?;
         // The module's name, else the server's (Content-Disposition), else the URL's.
-        let may_name = may_rename && !resolved_again;
+        let may_name = may_rename && std::mem::take(&mut first);
         if let Some(suggested) = source.filename.as_deref().filter(|_| may_name) {
             rename(&mut spec, id, suggested, msgs);
         }
@@ -956,6 +960,7 @@ async fn run_job(
         spec.headers = merge_headers(source.headers, &own_headers);
         spec.connections = source.max_connections.map_or(connections, |max| connections.min(max.max(1)));
         spec.segment_size = source.max_segment_size.map_or(segment_size, |max| segment_size.min(max.max(1)));
+        spec.decrypt = source.decrypt;
         let _ = msgs.send(JobMsg::Phase(id, Phase::Transferring));
         let result = match transfer::probe_source(&spec, ctx).await {
             Ok(probed) => {
@@ -968,6 +973,11 @@ async fn run_job(
         };
         match result {
             Err(CoreError::Http(401 | 403 | 410)) if source.expires && !resolved_again => resolved_again = true,
+            // Bandwidth Limit Exceeded (MEGA's transfer quota): the module waits until the site
+            // serves again, then the transfer resumes where it stopped.
+            Err(CoreError::Http(509)) if source.expires && over_quota < MAX_QUOTA_ROUNDS => {
+                over_quota += 1;
+            }
             other => return other,
         }
     }

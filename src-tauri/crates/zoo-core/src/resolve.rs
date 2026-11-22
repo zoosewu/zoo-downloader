@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+use crate::cipher::Decrypt;
 use crate::error::CoreError;
 use crate::task::Phase;
 
@@ -29,11 +30,13 @@ pub struct Source {
     /// Whether the link was produced by resolution (and so may expire); a direct link
     /// is never re-resolved.
     pub expires: bool,
+    /// The server sends the file encrypted (MEGA); the transfer decrypts it.
+    pub decrypt: Option<Decrypt>,
 }
 
 impl Source {
     pub fn direct(url: &str) -> Self {
-        Self { url: url.to_string(), headers: Vec::new(), filename: None, max_connections: None, max_segment_size: None, expires: false }
+        Self { url: url.to_string(), headers: Vec::new(), filename: None, max_connections: None, max_segment_size: None, expires: false, decrypt: None }
     }
 }
 

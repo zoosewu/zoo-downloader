@@ -76,6 +76,7 @@ fn expiring(url: String) -> Source {
         max_connections: None,
         max_segment_size: None,
         expires: true,
+        decrypt: None,
     }
 }
 
@@ -162,6 +163,20 @@ async fn an_expired_link_is_resolved_again_once() {
     let task = wait_until(&m, id, |t| t.state == TaskState::Failed).await;
     assert_eq!(task.error, Some(CoreError::Http(410)));
     assert_eq!(resolver.calls(), 2);
+}
+
+#[tokio::test]
+async fn the_module_is_asked_again_after_the_bandwidth_limit() {
+    let fx = Fixture::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    // Twice over the limit (MEGA's 509), then the module hands out a link that works.
+    let (limited, fresh) = (fx.url("/file/5000?status=509"), fx.url("/file/5000"));
+    let resolver = Scripted::new(move |n| Ok(expiring(if n < 2 { limited.clone() } else { fresh.clone() })));
+    let m = start(config(), dir.path(), resolver.clone());
+    let id = m.add(req(dir.path(), None)).await.unwrap().id;
+    let task = wait_until(&m, id, |t| t.state == TaskState::Completed).await;
+    assert_eq!(resolver.calls(), 3);
+    assert_eq!(std::fs::read(task.final_path.unwrap()).unwrap(), expected(5000));
 }
 
 #[tokio::test]

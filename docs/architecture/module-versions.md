@@ -22,6 +22,7 @@ marketplace 都讀不了。官方 marketplace 打包在 app 裡、不受影響�
 | 1 | 第一版 |
 | 2 | `credentialsHelp`、`credentialsHelpUrl`、欄位的 `help`、`helpUrl`、可多語言的 `label`（app 0.2.5） |
 | 3 | `zoo.ask`：向使用者要一個值（提取碼等），可記在這次下載（app 0.2.6）。執行期的 API 由 host 依 `ModuleRef.apiVersion` 開放，宣告較舊 level 的模組呼叫會得到「需要 apiVersion 3」 |
+| 4 | `resolve` 回傳 `decrypt`（`aes-128-ctr`，hex 金鑰）：伺服器上是密文的檔案（MEGA），app 邊下載邊解密（zoo-core `cipher.rs`，寫入前與續傳抽樣比對時依位置套用），分段與續傳照常（app 0.3.0）。同版起下載遇到 HTTP 509 會回模組重新解析（一次執行最多 20 次），模組在 `resolve` 裡等額度恢復 |
 
 `zoo.ask` 記住的答案存在任務的 `answers`（zoo-core `resolve::Answers`）：重試、繼續、連結過期都沿用；
 `secret` 的只在記憶體；列出分享時的答案經 `ListedFile.answers` 帶給 `downloads_add`；改任務網址時清掉。

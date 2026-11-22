@@ -21,6 +21,8 @@ log = "0.4"
 ts-rs = { version = "12", features = ["chrono-impl", "uuid-impl", "serde-json-impl"] }
 fs4 = "1.1.0"
 regex = "1"
+aes = "0.8"
+ctr = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
