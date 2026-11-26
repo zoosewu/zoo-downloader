@@ -45,7 +45,7 @@ pnpm version:check                  # package.json、Cargo.toml、Cargo.lock 的
 
 **發布與自動更新**：版本只寫在 `package.json`（`tauri.conf.json` 引用它，`Cargo.toml`/`Cargo.lock` 由 `scripts/version.mjs` 同步）。推送 `vX.Y.Z` tag 觸發 `.github/workflows/release.yml`：建草稿 Release（`.github/release-notes.md` 的 macOS 打開步驟加自動產生的說明、附瀏覽器擴充 zip；Mac 版未經 Apple 公證）→ Windows x64、macOS arm64/x64（x64 用 `macos-15-intel`）、Linux x64 各自建置並用 `TAURI_SIGNING_PRIVATE_KEY` 簽更新檔，完成的平台由 `scripts/updater-json.mjs` 把自己加進 `latest.json` 並發布（第一個完成的讓 Release 公開，慢的平台不擋其他平台）→ 收尾的 `finish` 不論成敗都執行，用所有安裝檔重寫 `latest.json`，缺平台就失敗；在 Actions 按「Re-run failed jobs」補建缺的平台並再收尾一次。`latest.json` 還沒有自己平台時，app 視為沒有更新（`isPlatformNotReleased`）。app 從 `releases/latest/download/latest.json` 檢查更新（`tauri-plugin-updater`，公鑰在 `tauri.conf.json`），安裝前呼叫 `app_prepare_update` 停止下載並存檔。私鑰在開發者電腦（位置記在不入庫的 `CLAUDE.local.md`）與 GitHub secret，遺失就無法再推更新給已安裝的使用者。`createUpdaterArtifacts` 只在 `tauri.bundle.json`，開發建置不需要私鑰。
 
-**開發版與正式版分開**（2026-11-26）：debug 建置（	auri dev）用自己的 identifier（com.zoo.zoo-downloader.dev，single-instance、WebView 資料、log 分開）、資料夾 zoo-downloader-dev（zoo_native_host::APP_DIR：設定、任務、模組、橋接管道名稱）、keyring 服務 zoo-downloader-dev.site-modules，且不向瀏覽器登記 native host（瀏覽器擴充永遠連正式版），視窗標題加「(Dev)」。所以開發時正式版照常下載；開發版要另外安裝模組、輸入帳號。
+**開發版與正式版分開**（2026-11-26）：debug 建置（`tauri dev`）用自己的 identifier（`com.zoo.zoo-downloader.dev`，single-instance、WebView 資料、log 分開）、資料夾 `zoo-downloader-dev`（`zoo_native_host::APP_DIR`：設定、任務、模組、橋接管道名稱）、keyring 服務 `zoo-downloader-dev.site-modules`，且不向瀏覽器登記 native host（瀏覽器擴充永遠連正式版），視窗標題加「(Dev)」。所以開發時正式版照常下載；開發版要另外安裝模組、輸入帳號。
 
 Windows 注意：v8 crate 在 target 目錄與 cargo registry 位於不同磁碟時需要建立 symlink（未開啟開發人員模式會失敗，錯誤 1314），可設 `CARGO_TARGET_DIR` 到與 registry 同一磁碟。
 
