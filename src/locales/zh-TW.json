@@ -211,7 +211,7 @@
     "installed": {
       "downloadAgain": "重新下載",
       "title": "已安裝",
-      "checkOnStart": "啟動時檢查更新",
+      "checkOnStart": "檢查更新（啟動時、使用模組時）",
       "autoStart": "這個網站的連結直接開始下載",
       "empty": "尚未安裝任何模組。到「瀏覽」安裝，或在「來源」新增模組市集。",
       "local": "本機",
@@ -239,7 +239,7 @@
       "installed": "已安裝"
     },
     "trust": {
-      "official": "官方"
+      "official": "Zoo"
     },
     "consent": {
       "community": "這個模組來自社群來源，請確認你信任它的作者。",

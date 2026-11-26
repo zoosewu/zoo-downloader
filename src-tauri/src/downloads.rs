@@ -9,7 +9,7 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::broadcast::error::RecvError;
 use zoo_core::connection::{ConnectionSource, Direct};
 use zoo_core::proxy_pool::ProxyPool;
-use zoo_core::{CoreError, DownloadManager, Event, TaskState};
+use zoo_core::{CoreError, DownloadManager, Event, Phase, Task, TaskState};
 use zoo_core::Resolver;
 
 /// Frontend event carrying a `zoo_core::Event`.
@@ -67,6 +67,9 @@ pub fn forward_events(app: AppHandle) {
                 Ok(event) => {
                     if let Event::Finished(task) = &event {
                         notify(&app, task).await;
+                    }
+                    if let Event::Upserted(Task { phase: Some(Phase::Resolving { module: Some(key) }), .. }) = &event {
+                        crate::site_modules::check_update_on_use(&app, key);
                     }
                     if let Err(e) = app.emit(DOWNLOAD_EVENT, &event) {
                         log::warn!("failed to emit {DOWNLOAD_EVENT}: {e}");

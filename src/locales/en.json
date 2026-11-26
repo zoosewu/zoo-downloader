@@ -211,7 +211,7 @@
     "installed": {
       "downloadAgain": "Download again",
       "title": "Installed",
-      "checkOnStart": "Check for updates on start",
+      "checkOnStart": "Check for updates (at start and when a module is used)",
       "autoStart": "Start links from this site at once",
       "empty": "No modules installed. Install one from Browse, or add a marketplace under Sources.",
       "local": "Local",
@@ -239,7 +239,7 @@
       "installed": "Installed"
     },
     "trust": {
-      "official": "Official"
+      "official": "Zoo"
     },
     "consent": {
       "community": "This module comes from a community source. Make sure you trust its author.",

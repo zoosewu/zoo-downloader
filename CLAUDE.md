@@ -593,7 +593,7 @@ chmod +x .git/hooks/pre-commit
 - `crates/zoo-module/tests/sdk.rs`：執行期全域物件與 `globals.d.ts` 完全相同；宣告的每個成員都存在；JSON Schema 與 `Manifest::parse` 對同一組範例的判定相同。
 - `src/__tests__/module-sdk.test.ts`：範本能通過型別檢查；不支援的 API（`document`、`WebSocket`、`require`、`Deno` 等）與錯誤的 `resolve` 回傳值會被標錯。
 
-官方 marketplace 在獨立的 repo `zoosewu/zoo-downloader-marketplace`（`docs/architecture/official-marketplace-repo.md`），app 從 GitHub 讀、不打包。改模組在那個 repo：`pnpm build && pnpm catalog`、`pnpm check`，推上 `main` 就生效。開發版可設 `ZOO_OFFICIAL_MARKETPLACE=<本機 clone>` 讀本機。改了 SDK（新的 API level，見 `module-versions.md`）後在那邊 `pnpm sdk <commit>`。檔案不在的已安裝模組（舊版 app 原地執行的官方模組）在啟動時由 `restore_missing` 重新下載。
+官方 marketplace（catalog 名稱 `zoo`，模組鍵 `<id>@zoo`；0.5.0 前叫 `official`，`Marketplace::rename_official` 在啟動時把已安裝模組、設定與鑰匙圈帳號搬到新名稱）在獨立的 repo `zoosewu/zoo-downloader-marketplace`（`docs/architecture/official-marketplace-repo.md`），app 從 GitHub 讀、不打包。改模組在那個 repo：`pnpm build && pnpm catalog`、`pnpm check`，推上 `main` 就生效。開發版可設 `ZOO_OFFICIAL_MARKETPLACE=<本機 clone>` 讀本機。改了 SDK（新的 API level，見 `module-versions.md`）後在那邊 `pnpm sdk <commit>`。模組更新：啟動時檢查全部來源，模組開始解析下載時再檢查它的來源（最多每小時一次，`check_update_on_use`），都受「檢查模組更新」設定控制；有新版只顯示更新按鈕，不自動安裝。檔案不在的已安裝模組（舊版 app 原地執行的官方模組）在啟動時由 `restore_missing` 重新下載。
 
 ## 作品集（apex-code）
 

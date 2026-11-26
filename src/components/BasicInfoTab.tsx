@@ -120,7 +120,12 @@ function useModuleName(key: string | null, url: string): string | null {
       current = false;
     };
   }, [key, url]);
-  return key ? (installed.find((m) => m.key === key)?.name ?? null) : byUrl;
+  if (!key) return byUrl;
+  // Recorded under a marketplace's old name (`baidu@official` before it was `zoo`): the one
+  // installed module with that id.
+  const id = key.split('@')[0];
+  const byId = installed.filter((m) => m.id === id);
+  return (installed.find((m) => m.key === key) ?? (byId.length === 1 ? byId[0] : undefined))?.name ?? null;
 }
 
 export default BasicInfoTab;

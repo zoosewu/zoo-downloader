@@ -323,6 +323,9 @@ impl Marketplace {
     async fn add(&self, input: &str, trust: Trust) -> Result<SourceInfo, MarketError> {
         let location = Location::parse(input)?;
         let (catalog, commit) = self.load(&location).await?;
+        if trust == Trust::Official {
+            self.rename_official(&catalog.name)?;
+        }
         let record = SourceRecord {
             name: catalog.name.clone(),
             location: input.to_string(),
@@ -351,6 +354,49 @@ impl Marketplace {
             Ok(())
         })?;
         Ok(info)
+    }
+
+    /// The official catalog got a new name (`official` → `zoo`): its installed modules move to
+    /// the new name (`baidu@official` → `baidu@zoo`) with their settings and stored credentials,
+    /// and the source under the old name goes. Credentials are copied before the state changes
+    /// and the old ones deleted after, so a failure never loses them.
+    fn rename_official(&self, name: &str) -> Result<(), MarketError> {
+        let moving: Vec<InstalledRecord> = {
+            let st = self.state.lock().unwrap();
+            let old: Vec<&str> = st.sources.iter().filter(|s| s.trust == Trust::Official && s.name != name).map(|s| s.name.as_str()).collect();
+            if old.is_empty() {
+                return Ok(());
+            }
+            st.installed.iter().filter(|m| old.contains(&m.marketplace.as_str())).cloned().collect()
+        };
+        let renamed = |m: &InstalledRecord| InstalledRecord { marketplace: name.to_string(), ..m.clone() };
+        let accounts = |m: &InstalledRecord| -> Vec<(String, String)> {
+            let new = renamed(m).key();
+            m.manifest.permissions.credentials.iter().map(|f| (account(&m.key(), &f.key), account(&new, &f.key))).collect()
+        };
+        for (from, to) in moving.iter().flat_map(accounts) {
+            if let Some(secret) = self.secrets.get(&from).map_err(MarketError::Io)? {
+                self.secrets.set(&to, &secret).map_err(MarketError::Io)?;
+            }
+        }
+        self.change(|st| {
+            st.sources.retain(|s| !(s.trust == Trust::Official && s.name != name));
+            let taken: Vec<String> = st.installed.iter().filter(|m| m.marketplace == name).map(|m| m.id.clone()).collect();
+            // A module already installed under the new name (an older app added the renamed
+            // catalog beside the old one) keeps that copy.
+            st.installed.retain(|m| !(moving.iter().any(|old| old.key() == m.key()) && taken.contains(&m.id)));
+            for m in st.installed.iter_mut().filter(|m| moving.iter().any(|old| old.key() == m.key())) {
+                m.marketplace = name.to_string();
+            }
+            Ok(())
+        })?;
+        for (from, _) in moving.iter().flat_map(accounts) {
+            if let Err(e) = self.secrets.delete(&from) {
+                log::warn!("cannot delete the old credential {from}: {e}");
+            }
+        }
+        log::info!("official marketplace renamed to {name:?}: moved {} module(s)", moving.len());
+        Ok(())
     }
 
     pub fn sources(&self) -> Vec<SourceInfo> {
@@ -386,33 +432,56 @@ impl Marketplace {
         let sources: Vec<(String, String)> =
             self.state.lock().unwrap().sources.iter().map(|s| (s.name.clone(), s.location.clone())).collect();
         for (name, location) in sources {
-            let loaded = match Location::parse(&location) {
-                Ok(location) => self.load(&location).await,
-                Err(e) => Err(e),
-            };
-            let result = self.change(|st| {
-                let Some(record) = st.sources.iter_mut().find(|s| s.name == name) else { return Ok(()) };
-                record.refreshed_at = Utc::now();
-                match loaded {
-                    Ok((catalog, _)) if catalog.name != name => {
-                        record.error = Some(format!("the catalog is now named {:?}; remove and add it again", catalog.name));
-                    }
-                    Ok((catalog, commit)) => {
-                        (record.catalog, record.commit, record.error) = (catalog, commit, None);
-                    }
-                    Err(e) => record.error = Some(e.to_string()),
-                }
-                mark_updates(st);
-                Ok(())
-            });
-            if let Err(e) = result {
-                log::warn!("cannot save marketplace state: {e}");
-            }
+            self.refresh_one(&name, &location).await;
         }
         if let Err(e) = self.reload_local() {
             log::warn!("cannot reload local modules: {e}");
         }
         self.sources()
+    }
+
+    /// Fetch the catalog of the marketplace `key` (`id@marketplace`) came from, unless that was
+    /// done less than `max_age` ago: a module in use finds its updates while the app keeps
+    /// running. True when it was fetched.
+    pub async fn refresh_for(&self, key: &str, max_age: std::time::Duration) -> bool {
+        let Ok((_, marketplace)) = split_key(key) else { return false };
+        // Claimed before fetching: several downloads starting at once fetch it once.
+        let due = self.change(|st| {
+            let stale = |s: &&mut SourceRecord| (Utc::now() - s.refreshed_at).to_std().is_ok_and(|age| age >= max_age);
+            let source = st.sources.iter_mut().find(|s| s.name == marketplace).filter(stale);
+            Ok(source.map(|s| {
+                s.refreshed_at = Utc::now();
+                s.location.clone()
+            }))
+        });
+        let Ok(Some(location)) = due else { return false };
+        self.refresh_one(marketplace, &location).await;
+        true
+    }
+
+    async fn refresh_one(&self, name: &str, location: &str) {
+        let loaded = match Location::parse(location) {
+            Ok(location) => self.load(&location).await,
+            Err(e) => Err(e),
+        };
+        let result = self.change(|st| {
+            let Some(record) = st.sources.iter_mut().find(|s| s.name == name) else { return Ok(()) };
+            record.refreshed_at = Utc::now();
+            match loaded {
+                Ok((catalog, _)) if catalog.name != name => {
+                    record.error = Some(format!("the catalog is now named {:?}; remove and add it again", catalog.name));
+                }
+                Ok((catalog, commit)) => {
+                    (record.catalog, record.commit, record.error) = (catalog, commit, None);
+                }
+                Err(e) => record.error = Some(e.to_string()),
+            }
+            mark_updates(st);
+            Ok(())
+        });
+        if let Err(e) = result {
+            log::warn!("cannot save marketplace state: {e}");
+        }
     }
 
     // --- installing ------------------------------------------------------------------------

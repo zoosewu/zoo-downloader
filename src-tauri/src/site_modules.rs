@@ -107,6 +107,30 @@ fn module_host() -> Supervisor {
     Supervisor::new(path, ["serve"])
 }
 
+/// How stale a module's catalog may be when the module is used before it is fetched again.
+const CHECK_ON_USE: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// A module started resolving a download: look for a newer version of it, at most every
+/// `CHECK_ON_USE`, so the app finds updates while it keeps running. Only shown (the module
+/// page's update button), never installed by itself.
+pub fn check_update_on_use(app: &AppHandle, key: &str) {
+    let (app, key) = (app.clone(), key.to_string());
+    tauri::async_runtime::spawn(async move {
+        // The same switch as the check at start ("check for module updates").
+        if !app.state::<crate::commands::settings::SettingsState>().settings.lock().await.check_module_updates {
+            return;
+        }
+        let modules = app.state::<SiteModules>();
+        if modules.market.refresh_for(&key, CHECK_ON_USE).await {
+            if let Some(update) = modules.market.installed().into_iter().find(|m| m.key == key).and_then(|m| m.update) {
+                log::info!("{key}: version {update} is available");
+            }
+            modules.sync();
+            let _ = app.emit(MODULES_EVENT, ());
+        }
+    });
+}
+
 /// Register the official marketplace, bring back modules whose files are gone, check for
 /// updates if the user wants that, relay captchas to the frontend and re-read local modules
 /// when their folders change.
