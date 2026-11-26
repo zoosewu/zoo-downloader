@@ -9,6 +9,12 @@ use zoo_native_host::{extension_origins, HOST_NAME};
 const HOST_EXE: &str = if cfg!(windows) { "zoo-native-host.exe" } else { "zoo-native-host" };
 
 pub fn register() {
+    // The browsers know one host: the installed app's. A dev build taking it over would make
+    // the extension start the dev build.
+    if cfg!(debug_assertions) {
+        log::info!("dev build: the browser extension stays with the installed app");
+        return;
+    }
     if let Err(e) = try_register() {
         log::warn!("cannot register the browser extension host: {e}");
     }

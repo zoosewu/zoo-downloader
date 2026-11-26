@@ -203,7 +203,8 @@ fn verbatim_prefixes_are_dropped() {
 /// Module credentials in the OS keychain.
 struct KeyringSecrets;
 
-const KEYRING_SERVICE: &str = "zoo-downloader.site-modules";
+/// Dev builds keep their own module accounts (`APP_DIR`).
+const KEYRING_SERVICE: &str = if cfg!(debug_assertions) { "zoo-downloader-dev.site-modules" } else { "zoo-downloader.site-modules" };
 
 /// The OS credential store, chosen once. Each store's default naming matches what keyring 2
 /// wrote, so credentials saved by older versions are still found.

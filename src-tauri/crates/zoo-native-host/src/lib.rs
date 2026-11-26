@@ -11,6 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io;
 
+/// The app's folder name, also the stem of its socket name. Dev (debug) builds use their own,
+/// so a dev build runs beside the installed app without touching its downloads, settings or
+/// browser bridge.
+pub const APP_DIR: &str = if cfg!(debug_assertions) { "zoo-downloader-dev" } else { "zoo-downloader" };
+
 /// The native messaging host name the extension asks the browser for.
 pub const HOST_NAME: &str = "com.zoo.downloader";
 
@@ -126,7 +131,7 @@ pub fn socket_name() -> io::Result<Name<'static>> {
     {
         use interprocess::local_socket::{GenericNamespaced, ToNsName};
         let user: String = std::env::var("USERNAME").unwrap_or_default().chars().filter(char::is_ascii_alphanumeric).collect();
-        format!("zoo-downloader-bridge-{user}").to_ns_name::<GenericNamespaced>().map(Name::into_owned)
+        format!("{APP_DIR}-bridge-{user}").to_ns_name::<GenericNamespaced>().map(Name::into_owned)
     }
     #[cfg(unix)]
     {
@@ -140,7 +145,7 @@ pub fn socket_name() -> io::Result<Name<'static>> {
 #[cfg(unix)]
 pub fn socket_dir() -> io::Result<std::path::PathBuf> {
     let dir = dirs::config_dir().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no config directory"))?;
-    Ok(dir.join("zoo-downloader"))
+    Ok(dir.join(APP_DIR))
 }
 
 #[cfg(test)]
@@ -209,7 +214,7 @@ mod tests {
     fn socket_name_is_per_user() {
         let name = format!("{:?}", socket_name().unwrap());
         #[cfg(windows)]
-        assert!(name.contains("zoo-downloader-bridge-"), "{name}");
+        assert!(name.contains(&format!("{APP_DIR}-bridge-")), "{name}");
         #[cfg(unix)]
         assert!(name.contains("bridge.sock"), "{name}");
     }

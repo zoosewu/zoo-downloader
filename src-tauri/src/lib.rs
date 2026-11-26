@@ -125,6 +125,20 @@ fn app_commands(invoke: tauri::ipc::Invoke) -> bool {
     handle(invoke)
 }
 
+/// The app's config; dev (debug) builds get their own identifier, so they run beside the
+/// installed app: their own single instance, WebView data and logs (see also `APP_DIR`).
+fn context() -> tauri::Context {
+    let mut context = tauri::generate_context!();
+    if cfg!(debug_assertions) {
+        let config = context.config_mut();
+        config.identifier.push_str(".dev");
+        for window in &mut config.app.windows {
+            window.title.push_str(" (Dev)");
+        }
+    }
+    context
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = load_settings_from_file();
@@ -195,7 +209,7 @@ pub fn run() {
             let _ = app.emit(READY_EVENT, ());
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("error while building tauri application");
 
     app.run(|app, event| {
