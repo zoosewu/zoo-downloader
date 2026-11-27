@@ -1,3 +1,15 @@
+# 接入 zoo-release v1（2026-11-28）
+
+依 https://github.com/zoosewu/zoo-release/blob/main/docs/ADOPTION.md
+
+- [x] A 發布：release.yml 改用 zoo-release `release.yml@v1`；建置保留在本專案（共用 `tauri-build.yml` 的 macOS 兩個架構更新檔同名、也不收 zoo-module CLI）；版本由 tag 寫入；`pnpm release` 的 commit 改 `chore(release)`；移除 `scripts/updater-json.mjs`
+- [ ] A6 測試 tag `v0.0.0-test.1`（`publish: false`），確認草稿後刪掉
+- [x] B 更新：24 小時規則與啟動 1 分鐘後檢查、只在主版／次版提示、略過 `主.次`、狀態存設定檔
+- [x] B UI：主畫面上方橫幅（四種狀態）、設定最後一頁「關於」（版本、檢查更新、狀態、自動檢查、連結、作者的其他專案）、用詞照 UI.md
+- [x] C 授權：Cargo 的 license、README 商業授權段落、CONTRIBUTING.md、PR 範本、contributor-license workflow
+- [x] D CLAUDE.md 加入 zoo-release 段落
+- [x] 測試、型別檢查、cargo test、實際畫面
+
 # 架構深度檢視（2026-10-30）
 
 目標：以最終成果為導向，重新檢驗 specs 001–004 與實作。不限於 deepening：可提出局部重寫、刪除、或整體架構翻新，每個範圍給出「保留 / 深化 / 重寫 / 刪除」判斷。產出 HTML 報告後逐項討論。

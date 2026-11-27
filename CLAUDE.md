@@ -5,6 +5,16 @@
 
 前端和 tauri 接口對接時，永遠使用「優雅降級」模式，確保用戶在 Tauri API 尚未完全初始化時會看到清楚的錯誤訊息，而不是技術性的異常。
 
+## 發布、更新與授權（zoo-release: v1）
+
+發布流程、更新機制、相關 UI 與授權依 https://github.com/zoosewu/zoo-release 的規範：
+- commit 使用慣例式提交；推 tag `vX.Y.Z` 發布（docs/RELEASE.md）
+- 更新檢查、提示與安裝（docs/UPDATE.md），新版本橫幅與「關於」頁（docs/UI.md）
+- 授權依 docs/LICENSING.md：產品 AGPL-3.0-only＋商業授權、函式庫與工具 MIT；加入 GPL／AGPL 的相依套件前先問使用者
+- 外部 PR 必須勾選同意 CONTRIBUTING.md 的貢獻授權才能合併；不要合併沒有同意的 PR
+- 修改發布、更新或「關於」頁前先讀對應的規範，不要自行偏離；規範不適用時回報使用者
+- 使用者說「更新 zoo-release 規範」時：讀 docs/ADOPTION.md 的「變更紀錄」，只做從目前版本到最新版本列出的「專案要做的事」，最後把上面標題的版本號改成最新版
+
 ## 先讀這些（2026-10-30 架構檢視後）
 
 - `docs/architecture/review-2026-10-30.md`：已知問題清單（SEC / A / B / C / D / SET / SPEC 編號）、候選改善項 CAND-1..8、建議階段。修改相關程式前先查，修正後在該條目標註。
@@ -43,7 +53,7 @@ pnpm release 0.2.0                  # 或 patch / minor / major：改版本、co
 pnpm version:check                  # package.json、Cargo.toml、Cargo.lock 的版本一致
 ```
 
-**發布與自動更新**：版本只寫在 `package.json`（`tauri.conf.json` 引用它，`Cargo.toml`/`Cargo.lock` 由 `scripts/version.mjs` 同步）。推送 `vX.Y.Z` tag 觸發 `.github/workflows/release.yml`：建草稿 Release（`.github/release-notes.md` 的 macOS 打開步驟加自動產生的說明、附瀏覽器擴充 zip；Mac 版未經 Apple 公證）→ Windows x64、macOS arm64/x64（x64 用 `macos-15-intel`）、Linux x64 各自建置並用 `TAURI_SIGNING_PRIVATE_KEY` 簽更新檔，完成的平台由 `scripts/updater-json.mjs` 把自己加進 `latest.json` 並發布（第一個完成的讓 Release 公開，慢的平台不擋其他平台）→ 收尾的 `finish` 不論成敗都執行，用所有安裝檔重寫 `latest.json`，缺平台就失敗；在 Actions 按「Re-run failed jobs」補建缺的平台並再收尾一次。`latest.json` 還沒有自己平台時，app 視為沒有更新（`isPlatformNotReleased`）。app 從 `releases/latest/download/latest.json` 檢查更新（`tauri-plugin-updater`，公鑰在 `tauri.conf.json`），安裝前呼叫 `app_prepare_update` 停止下載並存檔。私鑰在開發者電腦（位置記在不入庫的 `CLAUDE.local.md`）與 GitHub secret，遺失就無法再推更新給已安裝的使用者。`createUpdaterArtifacts` 只在 `tauri.bundle.json`，開發建置不需要私鑰。
+**發布與自動更新**（依 zoo-release，見下方段落）：版本寫在 `package.json`（`tauri.conf.json` 引用它，`Cargo.toml`/`Cargo.lock` 由 `scripts/version.mjs` 同步）；建置時以 tag 為準（`version.mjs set`），`pnpm release` 的 `chore(release)` commit 只讓 main 跟上。推送 `vX.Y.Z` tag 觸發 `.github/workflows/release.yml`：`build` 各平台建置（Windows x64、macOS arm64/x64、Linux x64），用 `ZOO_SIGNING_KEY`/`ZOO_SIGNING_PASSWORD` secret 簽更新檔，macOS 的 `.app.tar.gz` 加上架構（Tauri 兩個架構同名，所以不用共用的 `tauri-build.yml`），連同 `zoo-module` CLI（marketplace 的 CI 下載它）上傳成 `release-<target>` artifact；`extension` 打包瀏覽器擴充；`release` 呼叫 `zoosewu/zoo-release/.github/workflows/release.yml@v1`（sha256、git-cliff 產生說明後接 `.github/release-notes.md`、`latest.json`、草稿 → 全部平台好了才發布）。任一平台失敗就不發布，在 Actions 按「Re-run failed jobs」。app 從 `releases/latest/download/latest.json` 檢查更新（`tauri-plugin-updater`，公鑰在 `tauri.conf.json`）：啟動 1 分鐘後、之後每天一次，一天內檢查過就沿用（`updateLastCheck`/`updateLatest`/`updateSkipped` 存在設定檔）；只有主版或次版較新才在主畫面顯示橫幅（`UpdateBanner`，工具列下方），修補版只在設定的「關於」頁；規則在 `src/utils/appUpdate.ts`。下載後由使用者按「立即重新啟動」，安裝前呼叫 `app_prepare_update` 停止下載並存檔。私鑰在開發者電腦（位置記在不入庫的 `CLAUDE.local.md`）與 GitHub secret，遺失就無法再推更新給已安裝的使用者。`createUpdaterArtifacts` 只在 `tauri.bundle.json`，開發建置不需要私鑰。
 
 **開發版與正式版分開**（2026-11-26）：debug 建置（`tauri dev`）用自己的 identifier（`com.zoo.zoo-downloader.dev`，single-instance、WebView 資料、log 分開）、資料夾 `zoo-downloader-dev`（`zoo_native_host::APP_DIR`：設定、任務、模組、橋接管道名稱）、keyring 服務 `zoo-downloader-dev.site-modules`，且不向瀏覽器登記 native host（瀏覽器擴充永遠連正式版），視窗標題加「(Dev)」。所以開發時正式版照常下載；開發版要另外安裝模組、輸入帳號。
 
@@ -530,7 +540,7 @@ chmod +x .git/hooks/pre-commit
   - 事件：`download-event`（含 zoo-core 判定的 `finished`，通知只看它）、`downloads-resync`、`modules-changed`（本機模組靠檔案系統通知）、`proxies-changed`（最多每 0.5 秒）、`clipboard-link`、`captcha-event`、`add-items-ready`、`app-ready`（前端先訂閱再問一次 `app_ready`）。
   - 前端共用狀態：下載（`downloadStore`，`useDownloadSync`）、模組（`useSiteModules`，`useModulesSync`）、設定（`settingsAtom`；設定頁改了就存，以後端回傳值為準）。
   - 保留的計時器只限「時間本身就是條件」：檢查更新（啟動時＋定期）、倒數顯示（`useNow`）、相對時間（`useRelativeTime`，所有列共用一個 15 秒時鐘，文字變了的格子才重畫）、排程、重試間隔、限速、每秒 flush、事件節流（進度 250 ms、只在有下載時；分段圖 500 ms）。
-- 設定頁（2026-11-27）：上方分頁（一般、下載、代理、網站模組、進階），分頁內的小節在左側（`settings/layout.tsx` 的 `SectionedPanel`）；每項設定一列（`SettingRow`，名稱在左、控制項在右），同組放在一個外框（`SettingsGroup`）。設定改了就存（`useUpdateSettings`，依序送出、以後端回傳為準；數字欄離開或按 Enter 才存），沒有儲存按鈕。有從屬關係的開關合併成一個下拉選單（剪貼簿、開機啟動、代理），不做第二層開關。
+- 設定頁（2026-11-27）：上方分頁（一般、下載、代理、網站模組、進階、關於；「關於」依 zoo-release 的 UI.md），分頁內的小節在左側（`settings/layout.tsx` 的 `SectionedPanel`）；每項設定一列（`SettingRow`，名稱在左、控制項在右），同組放在一個外框（`SettingsGroup`）。設定改了就存（`useUpdateSettings`，依序送出、以後端回傳為準；數字欄離開或按 Enter 才存），沒有儲存按鈕。有從屬關係的開關合併成一個下拉選單（剪貼簿、開機啟動、代理），不做第二層開關。
 - React 19 開發版會為每次 render 記 `performance.measure()`，沒有上限；`main.tsx` 在開發模式定期清除（曾讓 WebView 約 2.5 小時後當機）。
 - 驗證方式：在開發模式用 CDP 數 `performance.getEntriesByType('measure')` 的元件名稱（每秒、每個元件幾次）。
 5. **Sticky Header**: 表格頭部固定，改善大量下載時的用戶體驗
