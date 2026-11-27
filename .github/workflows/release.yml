@@ -2,7 +2,7 @@
 #   prepare  check the versions, create a draft release with generated notes, attach the
 #            browser extension
 #   build    one job per platform: installers plus updater bundles signed with
-#            TAURI_SIGNING_PRIVATE_KEY, and the zoo-module CLI; then the platform adds itself to
+#            the ZOO_SIGNING_KEY secret, and the zoo-module CLI; then the platform adds itself to
 #            latest.json and publishes the release (the first one to finish makes it public), so
 #            a slow or failed platform does not hold back the others. Installed apps find the
 #            update through releases/latest/download/latest.json
@@ -90,8 +90,8 @@ jobs:
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.ZOO_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.ZOO_SIGNING_PASSWORD }}
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
           releaseDraft: true
