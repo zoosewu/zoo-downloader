@@ -528,7 +528,7 @@ chmod +x .git/hooks/pre-commit
 - 分享資料夾（`docs/architecture/share-listing.md`）：模組可選擇實作 `list(url)`，每個檔案帶自己的網址（百度用 `#path=`）。新增視窗對模組連結呼叫 `urls_list`，多檔時展開成可勾選的一組；每個檔案是普通任務，之後只靠 `resolve(檔案網址)`。資料夾結構以 `downloads_add` 的 `folder` 傳給後端建立。多檔分享不會自動開始。
 - 單一真實來源＋事件（2026-11-17）：每份狀態只有一個擁有者（任務：zoo-core；設定：後端；模組：marketplace；代理：proxy pool），改變時由擁有者發事件，其他地方只跟著事件更新，不輪詢、不另存可能過期的副本。
   - 事件：`download-event`（含 zoo-core 判定的 `finished`，通知只看它）、`downloads-resync`、`modules-changed`（本機模組靠檔案系統通知）、`proxies-changed`（最多每 0.5 秒）、`clipboard-link`、`captcha-event`、`add-items-ready`、`app-ready`（前端先訂閱再問一次 `app_ready`）。
-  - 前端共用狀態：下載（`downloadStore`，`useDownloadSync`）、模組（`useSiteModules`，`useModulesSync`）、設定（`settingsAtom`；設定頁編輯的是草稿，存檔後以後端回傳值為準）。
+  - 前端共用狀態：下載（`downloadStore`，`useDownloadSync`）、模組（`useSiteModules`，`useModulesSync`）、設定（`settingsAtom`；設定頁改了就存，以後端回傳值為準）。
   - 保留的計時器只限「時間本身就是條件」：檢查更新（啟動時＋定期）、倒數顯示（`useNow`）、相對時間（`useRelativeTime`，所有列共用一個 15 秒時鐘，文字變了的格子才重畫）、排程、重試間隔、限速、每秒 flush、事件節流（進度 250 ms、只在有下載時；分段圖 500 ms）。
 - 設定頁（2026-11-27）：上方分頁（一般、下載、代理、網站模組、進階），分頁內的小節在左側（`settings/layout.tsx` 的 `SectionedPanel`）；每項設定一列（`SettingRow`，名稱在左、控制項在右），同組放在一個外框（`SettingsGroup`）。設定改了就存（`useUpdateSettings`，依序送出、以後端回傳為準；數字欄離開或按 Enter 才存），沒有儲存按鈕。有從屬關係的開關合併成一個下拉選單（剪貼簿、開機啟動、代理），不做第二層開關。
 - React 19 開發版會為每次 render 記 `performance.measure()`，沒有上限；`main.tsx` 在開發模式定期清除（曾讓 WebView 約 2.5 小時後當機）。
