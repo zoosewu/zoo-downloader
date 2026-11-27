@@ -25,7 +25,6 @@ import CaptchaDialog from './components/CaptchaDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import AddDownloadsDialog from './components/AddDownloads';
 import SourceChangedPrompt from './components/SourceChangedPrompt';
-import UpdateBanner from './components/UpdateBanner';
 import { useAutomaticUpdateChecks } from './hooks/useAppUpdate';
 import { waitForTauri } from './utils/tauri';
 import { backend } from './backend';
@@ -113,8 +112,6 @@ function App() {
           flexDirection: 'column',
         }}
       >
-        <UpdateBanner />
-
         {/* Page Content */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {/* Keyed by page: going to the other page starts it afresh after an error. */}

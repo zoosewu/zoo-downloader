@@ -1,86 +1,130 @@
-// A card floating over the bottom-left corner when a new version is out: what changed,
-// "Update and restart", "Later". Shows progress while downloading and the reason if it fails.
-// It floats so the page never moves when it appears or goes.
-import React, { useState } from 'react';
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Paper, Typography } from '@mui/material';
-import { SystemUpdateAlt as UpdateIcon } from '@mui/icons-material';
+// The main screen's new-version strip, under the toolbar (zoo-release docs/UI.md §1): a new
+// major or minor version that was not skipped, then its download, "restart now", or why it failed.
+// Patch versions are only on the About page, which shows the same states (`useUpdateContent`).
+import React from 'react';
+import { Alert, Box, Button, IconButton, LinearProgress, Tooltip } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useAppUpdate } from '../hooks/useAppUpdate';
-import { formatBytes } from '../utils/downloadCalculations';
+import { useAtomValue } from 'jotai';
+import { appVersionAtom, bannerClosedAtom, updateStateAtom, useAppUpdate, type UpdateState } from '../hooks/useAppUpdate';
+import { settingsAtom } from '../stores/settingsStore';
+import { REPO_URL, failureReason, offerOnMainScreen } from '../utils/appUpdate';
+
+/** The message and buttons for an update on its way; null for the states only the About page has. */
+export function useUpdateContent(state: UpdateState, { withSkip }: { withSkip: boolean }) {
+  const { t } = useTranslation();
+  const { install, cancel, restart, skip } = useAppUpdate();
+  if (!('version' in state)) return null;
+
+  const version = state.version ? `v${state.version}` : '';
+  const page = version ? `${REPO_URL}/releases/tag/${version}` : `${REPO_URL}/releases/latest`;
+  const link = (label: string) => (
+    <Button color="inherit" size="small" href={page} target="_blank" rel="noreferrer">
+      {label}
+    </Button>
+  );
+
+  switch (state.kind) {
+    case 'available':
+      return {
+        message: t('update.available', { version }),
+        actions: (
+          <>
+            {link(t('update.notes'))}
+            {withSkip && (
+              <Button color="inherit" size="small" onClick={() => skip(state.version)}>
+                {t('update.skip')}
+              </Button>
+            )}
+            <Button variant="contained" size="small" onClick={install}>
+              {t('update.install')}
+            </Button>
+          </>
+        ),
+      };
+    case 'downloading': {
+      const percent = state.total ? Math.floor((state.done / state.total) * 100) : null;
+      return {
+        message: (
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.5 }}>
+            {t('update.downloading', { version })}
+            <LinearProgress variant={percent === null ? 'indeterminate' : 'determinate'} value={percent ?? 0} sx={{ width: 160 }} />
+            {percent !== null && `${percent}%`}
+          </Box>
+        ),
+        actions: (
+          <Button color="inherit" size="small" onClick={cancel}>
+            {t('update.cancel')}
+          </Button>
+        ),
+      };
+    }
+    case 'ready':
+    case 'restarting':
+      return {
+        message: t('update.ready', { version }),
+        actions: (
+          <Button variant="contained" size="small" disabled={state.kind === 'restarting'} onClick={restart}>
+            {t('update.restart')}
+          </Button>
+        ),
+      };
+    case 'failed': {
+      const reason = failureReason(state.message);
+      return {
+        message: t('update.failed', { reason: reason ? t(`update.reason.${reason}`) : state.message }),
+        actions: link(t('update.manual')),
+      };
+    }
+  }
+}
 
 const UpdateBanner: React.FC = () => {
   const { t } = useTranslation();
-  const { state, install, dismissed, dismiss } = useAppUpdate();
-  const [showNotes, setShowNotes] = useState(false);
+  const state = useAtomValue(updateStateAtom);
+  const current = useAtomValue(appVersionAtom);
+  const closed = useAtomValue(bannerClosedAtom);
+  const skipped = useAtomValue(settingsAtom).updateSkipped;
+  const { later } = useAppUpdate();
+  const content = useUpdateContent(state, { withSkip: true });
 
-  const update = 'update' in state ? state.update : undefined;
-  if (!update || (state.kind === 'available' && dismissed === update.version)) return null;
-  const busy = state.kind === 'downloading' || state.kind === 'installing';
-  const tone = state.kind === 'failed' ? 'error' : 'info';
+  const shown =
+    state.kind === 'available'
+      ? !closed && !!current && offerOnMainScreen(current, state.version, skipped)
+      : state.kind === 'failed'
+        ? !closed
+        : state.kind === 'downloading' || state.kind === 'ready' || state.kind === 'restarting';
+  if (!shown || !content) return null;
 
+  const closable = state.kind === 'available' || state.kind === 'failed';
   return (
-    <Paper
-      elevation={6}
+    <Alert
+      severity={state.kind === 'failed' ? 'error' : 'info'}
       role="status"
+      action={
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {content.actions}
+          {closable && (
+            <Tooltip title={t('update.later')}>
+              <IconButton color="inherit" size="small" aria-label={t('update.later')} onClick={later}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      }
       sx={{
-        position: 'fixed',
-        left: 16,
-        // Above the footer.
-        bottom: 36,
-        zIndex: (theme) => theme.zIndex.snackbar,
-        maxWidth: 'min(560px, calc(100vw - 32px))',
-        display: 'flex',
+        borderRadius: 0,
+        borderBottom: 1,
+        borderColor: 'divider',
+        py: 0,
         alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 1,
-        px: 1.5,
-        py: 0.75,
-        bgcolor: `${tone}.main`,
-        color: (theme) => theme.palette.getContrastText(theme.palette[tone].main),
+        '& .MuiAlert-message': { flex: 1, minWidth: 0 },
+        '& .MuiAlert-action': { pt: 0, alignItems: 'center' },
       }}
     >
-      <UpdateIcon fontSize="small" />
-      <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
-        {state.kind === 'failed'
-          ? t('update.failed', { message: state.message })
-          : state.kind === 'downloading'
-            ? t('update.downloading', {
-                version: update.version,
-                progress: state.total ? `${Math.floor((state.done / state.total) * 100)}%` : formatBytes(state.done),
-              })
-            : state.kind === 'installing'
-              ? t('update.installing')
-              : t('update.available', { version: update.version })}
-      </Typography>
-      {state.kind === 'downloading' && state.total && (
-        <LinearProgress variant="determinate" value={(state.done / state.total) * 100} color="inherit" sx={{ width: 120 }} />
-      )}
-      {update.body && (
-        <Button color="inherit" size="small" onClick={() => setShowNotes(true)}>
-          {t('update.notes')}
-        </Button>
-      )}
-      <Button color="inherit" size="small" variant="outlined" disabled={busy} onClick={() => install(update)}>
-        {state.kind === 'failed' ? t('update.retry') : t('update.install')}
-      </Button>
-      {!busy && (
-        <Button color="inherit" size="small" onClick={() => dismiss(update.version)}>
-          {t('update.later')}
-        </Button>
-      )}
-
-      <Dialog open={showNotes} onClose={() => setShowNotes(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{t('update.notesTitle', { version: update.version })}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', m: 0 }}>
-            {update.body}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowNotes(false)}>{t('common.close')}</Button>
-        </DialogActions>
-      </Dialog>
-    </Paper>
+      {content.message}
+    </Alert>
   );
 };
 

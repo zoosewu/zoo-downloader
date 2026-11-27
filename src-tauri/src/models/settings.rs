@@ -57,9 +57,18 @@ pub struct AppSettings {
     /// Look for module updates when the app starts (never installs them).
     #[serde(default = "default_true")]
     pub check_module_updates: bool,
-    /// Look for a new version of the app at start and every few hours; installing asks first.
+    /// Look for a new version of the app a minute after start and once a day; installing asks first.
     #[serde(default = "default_true")]
     pub check_app_updates: bool,
+    /// When the app last read the latest release (RFC 3339); a check within a day is reused.
+    #[serde(default)]
+    pub update_last_check: Option<String>,
+    /// The latest version that check found.
+    #[serde(default)]
+    pub update_latest: Option<String>,
+    /// `major.minor` the user skipped: those versions are not offered on the main screen.
+    #[serde(default)]
+    pub update_skipped: Option<String>,
 
     // Categories
     /// The user's categories, in sidebar order; their rules tag new downloads.
@@ -111,6 +120,9 @@ impl Default for AppSettings {
             user_agent: None,
             check_module_updates: true,
             check_app_updates: true,
+            update_last_check: None,
+            update_latest: None,
+            update_skipped: None,
             categories: Vec::new(),
         }
     }

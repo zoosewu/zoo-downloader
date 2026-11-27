@@ -32,8 +32,8 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost",
-        "img-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost https://zoosewu.github.io",
+        "img-src": "'self' data: https://zoosewu.github.io",
         "style-src": "'self' 'unsafe-inline'",
         "font-src": "'self' data:",
         "object-src": "'none'",

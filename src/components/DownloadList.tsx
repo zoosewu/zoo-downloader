@@ -12,6 +12,7 @@ import Sidebar from './Sidebar';
 import ImportListButton from './ImportListButton';
 import { useSelectedDownload, useSelectedTask } from '../hooks/useSelectedDownload';
 import { backend } from '../backend';
+import UpdateBanner from './UpdateBanner';
 
 /** The panel is the only part of the list that follows the selected task's progress. */
 const SelectedTaskPanel: React.FC = () => <DownloadDetailPanel task={useSelectedTask()} />;
@@ -103,6 +104,7 @@ const DownloadList: React.FC<DownloadListProps> = ({
           </IconButton>
         </Tooltip>
       </Box>
+      <UpdateBanner />
 
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
       <Sidebar />

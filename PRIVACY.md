@@ -42,7 +42,7 @@ Zoo Downloader（桌面 app）與 Zoo Downloader 瀏覽器擴充功能（Microso
 - **下載：** app 只連線到你要下載的網站，並把上述網址、Cookie、Referer、User-Agent 送給**那個網站**，就像瀏覽器自己下載一樣。
 - **存在你電腦上的資料：** 下載清單（網址、檔名、資料夾、下載時使用的標頭，包括 Cookie，用於續傳）、設定與記錄檔，存放在 app 的資料夾（Windows：`%APPDATA%\zoo-downloader`；macOS：`~/Library/Application Support/zoo-downloader`；Linux：`~/.config/zoo-downloader`）。移除一個下載就會從清單刪除它的這些資料（記錄檔中的錯誤訊息可能仍提到它的網址）。這些資料都不會上傳。
 - **網站模組的帳號資料**（例如百度網盤的 Cookie）：存放在作業系統的憑證管理（Windows 認證管理員、macOS 鑰匙圈、Linux Secret Service），只會送到該模組所屬的網站。
-- **檢查更新：** 開啟「自動檢查新版本」時，app 會向 GitHub（`github.com`）讀取最新版本資訊；網站模組的更新會從你加入的模組來源讀取。這些請求不含任何個人資料，但對方伺服器會看到你的 IP 位址。
+- **檢查更新：** 開啟「自動檢查更新」時（或在「關於」頁按「檢查更新」），app 會向 GitHub（`github.com`）讀取最新版本資訊；網站模組的更新會從你加入的模組來源讀取。打開「關於」頁時，會從 `zoosewu.github.io` 讀取作者的其他專案清單與圖片。這些請求不含任何個人資料，但對方伺服器會看到你的 IP 位址。
 - **沒有遙測：** app 不收集使用統計、錯誤回報或任何分析資料。
 
 ### 你的控制
@@ -92,7 +92,7 @@ Zoo Downloader（桌面 app）與 Zoo Downloader 瀏覽器擴充功能（Microso
 - **Downloading:** the app only connects to the sites you download from, and sends the URL, cookies, Referer and User-Agent above to **that site**, as the browser itself would.
 - **Stored on your computer:** the download list (URLs, file names, folders, and the headers used for each download, cookies included, so it can resume), settings and log files, in the app's folder (Windows: `%APPDATA%\zoo-downloader`; macOS: `~/Library/Application Support/zoo-downloader`; Linux: `~/.config/zoo-downloader`). Removing a download deletes it from the list (error messages in the log files may still mention its URL). None of it is uploaded.
 - **Site module accounts** (for example Baidu Netdisk cookies): kept in the operating system's credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service) and sent only to that module's site.
-- **Update checks:** with "Check for updates automatically" on, the app reads the latest release from GitHub (`github.com`); site module updates come from the module sources you added. These requests carry no personal data, though those servers see your IP address.
+- **Update checks:** with "Check for updates automatically" on (or when you click "Check for updates" on the About page), the app reads the latest release from GitHub (`github.com`); site module updates come from the module sources you added. Opening the About page reads the author's other projects, with their pictures, from `zoosewu.github.io`. These requests carry no personal data, though those servers see your IP address.
 - **No telemetry:** the app collects no usage statistics, crash reports or analytics.
 
 ### Your choices

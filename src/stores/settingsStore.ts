@@ -27,6 +27,9 @@ const defaultSettings: AppSettings = {
   userAgent: null,
   checkModuleUpdates: true,
   checkAppUpdates: true,
+  updateLastCheck: null,
+  updateLatest: null,
+  updateSkipped: null,
   categories: [],
 };
 

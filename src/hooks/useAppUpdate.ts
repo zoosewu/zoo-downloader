@@ -1,98 +1,176 @@
-// App updates (tauri-plugin-updater, GitHub Releases' latest.json): checked at start and every
-// few hours while enabled in settings; installing always waits for the user. Shared state, so
-// the banner and the settings page show the same update.
+// App updates (tauri-plugin-updater reading the release's latest.json), following zoo-release's
+// docs/UPDATE.md: checked a minute after start and once a day while enabled (a check from the
+// last day is reused); downloading and restarting wait for the user. Shared state, so the
+// banner and the About page show the same update.
 import { useCallback, useEffect } from 'react';
-import { atom, useAtom, useAtomValue } from 'jotai';
+import { atom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { getVersion } from '@tauri-apps/api/app';
 import { backend } from '../backend';
 import { settingsAtom } from '../stores/settingsStore';
+import { useUpdateSettings } from './useUpdateSettings';
+import { DAY_MS, checkDueIn, majorMinor, newerBy } from '../utils/appUpdate';
 
-const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
-
-/**
- * A release is published as soon as one platform is built, and latest.json lists the others as
- * they finish: until this platform is in, there is no update for it yet (not an error).
- */
-export function isPlatformNotReleased(message: string): boolean {
-  return message.includes('was not found on the response `platforms` object');
-}
+const FIRST_CHECK_MS = 60 * 1000;
 
 export type UpdateState =
+  /** Nothing known yet. */
   | { kind: 'idle' }
+  /** A check the user asked for. Automatic checks show nothing while they run. */
   | { kind: 'checking' }
   | { kind: 'upToDate' }
-  | { kind: 'available'; update: Update }
+  | { kind: 'available'; version: string }
   /** `total` is null when the server does not say. */
-  | { kind: 'downloading'; update: Update; done: number; total: number | null }
-  | { kind: 'installing'; update: Update }
-  | { kind: 'failed'; message: string; update?: Update };
+  | { kind: 'downloading'; version: string; done: number; total: number | null }
+  | { kind: 'ready'; version: string }
+  | { kind: 'restarting'; version: string }
+  /** A check the user asked for failed (automatic ones fail silently). */
+  | { kind: 'checkFailed' }
+  /** Downloading or installing failed. */
+  | { kind: 'failed'; version: string; message: string };
 
 export const updateStateAtom = atom<UpdateState>({ kind: 'idle' });
-/** The version the user put off with "Later"; not offered again until the next start. */
-const dismissedAtom = atom<string | null>(null);
+/** The running app's version; empty until read. */
+export const appVersionAtom = atom('');
+/** "Later" on the banner: not shown again until the next start. */
+export const bannerClosedAtom = atom(false);
+
+/** The update the last check found, held by the updater until installed or replaced. */
+let pending: Update | null = null;
+/** Bumped by cancel: a download that finishes after it is thrown away. */
+let downloadRun = 0;
+
+function hold(update: Update | null) {
+  if (pending && pending !== update) pending.close().catch(() => {});
+  pending = update;
+}
+
+const busy = (s: UpdateState) => s.kind === 'checking' || s.kind === 'downloading' || s.kind === 'ready' || s.kind === 'restarting';
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function useAppUpdate() {
-  const [state, setState] = useAtom(updateStateAtom);
-  const [dismissed, setDismissed] = useAtom(dismissedAtom);
+  const store = useStore();
+  const setState = useSetAtom(updateStateAtom);
+  const setBannerClosed = useSetAtom(bannerClosedAtom);
+  const updateSettings = useUpdateSettings();
 
-  /** `quiet`: an automatic check; its failures are only logged (offline is normal). */
+  /** `manual`: from the About page, which shows progress and failures; automatic checks are silent. */
   const checkNow = useCallback(
-    async (quiet = false) => {
-      setState((s) => (s.kind === 'downloading' || s.kind === 'installing' ? s : { kind: 'checking' }));
+    async (manual: boolean) => {
+      if (busy(store.get(updateStateAtom))) return;
+      if (manual) setState({ kind: 'checking' });
       try {
-        const update = await check();
-        setState(update ? { kind: 'available', update } : { kind: 'upToDate' });
+        const found = await check();
+        hold(found);
+        const current = await getVersion();
+        await updateSettings({ updateLastCheck: new Date().toISOString(), updateLatest: found?.version ?? current });
+        setState(found ? { kind: 'available', version: found.version } : { kind: 'upToDate' });
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        if (isPlatformNotReleased(message)) {
-          setState({ kind: 'upToDate' });
-        } else if (quiet) {
-          console.warn('[update] check failed:', message);
-          setState({ kind: 'idle' });
-        } else {
-          setState({ kind: 'failed', message });
-        }
+        if (manual) setState({ kind: 'checkFailed' });
+        else console.warn('[update] check failed:', errorText(e));
       }
     },
-    [setState],
+    [store, setState, updateSettings],
   );
 
-  /** Download, stop the downloads cleanly, install, restart. */
-  const install = useCallback(
-    async (update: Update) => {
+  /** Download it; the user restarts when it is ready. */
+  const install = useCallback(async () => {
+    const run = ++downloadRun;
+    setBannerClosed(false);
+    let version = '';
+    try {
+      // The last answer may be a saved one, with nothing held to download.
+      if (!pending) hold(await check());
+      const update = pending;
+      if (!update) return setState({ kind: 'upToDate' });
+      version = update.version;
       let done = 0;
       let total: number | null = null;
-      try {
-        setState({ kind: 'downloading', update, done, total });
-        await update.download((event) => {
-          if (event.event === 'Started') total = event.data.contentLength ?? null;
-          if (event.event === 'Progress') done += event.data.chunkLength;
-          setState({ kind: 'downloading', update, done, total });
-        });
-        setState({ kind: 'installing', update });
-        await backend.app.prepareUpdate();
-        await update.install();
-        await relaunch(); // Windows ends the app in install(); elsewhere restart here
-      } catch (e) {
-        setState({ kind: 'failed', message: e instanceof Error ? e.message : String(e), update });
+      setState({ kind: 'downloading', version, done, total });
+      await update.download((event) => {
+        if (run !== downloadRun) return;
+        if (event.event === 'Started') total = event.data.contentLength ?? null;
+        if (event.event === 'Progress') done += event.data.chunkLength;
+        setState({ kind: 'downloading', version, done, total });
+      });
+      if (run !== downloadRun) {
+        update.close().catch(() => {});
+        return;
       }
-    },
-    [setState],
-  );
+      setState({ kind: 'ready', version });
+    } catch (e) {
+      if (run !== downloadRun) return;
+      hold(null); // trying again starts from a fresh check
+      setState({ kind: 'failed', version, message: errorText(e) });
+    }
+  }, [setState, setBannerClosed]);
 
-  return { state, checkNow, install, dismissed, dismiss: setDismissed };
+  /** Stop following the download; the updater has no way to stop it, so its bytes are dropped when it ends. */
+  const cancel = useCallback(() => {
+    const s = store.get(updateStateAtom);
+    if (s.kind !== 'downloading') return;
+    downloadRun++;
+    pending = null; // closed by the abandoned download when it ends
+    setState({ kind: 'available', version: s.version });
+  }, [store, setState]);
+
+  /** Stop the downloads cleanly, install, start again. */
+  const restart = useCallback(async () => {
+    const s = store.get(updateStateAtom);
+    if (s.kind !== 'ready' || !pending) return;
+    setState({ kind: 'restarting', version: s.version });
+    try {
+      await backend.app.prepareUpdate();
+      await pending.install();
+      await relaunch(); // Windows ends the app in install(); elsewhere restart here
+    } catch (e) {
+      setState({ kind: 'failed', version: s.version, message: errorText(e) });
+    }
+  }, [store, setState]);
+
+  const skip = useCallback((version: string) => updateSettings({ updateSkipped: majorMinor(version) }), [updateSettings]);
+
+  return { checkNow, install, cancel, restart, skip, later: () => setBannerClosed(true) };
+}
+
+/** Read the app's version once (main window). */
+export function useAppVersion() {
+  const version = useAtomValue(appVersionAtom);
+  const setVersion = useSetAtom(appVersionAtom);
+  useEffect(() => {
+    if (!version) getVersion().then(setVersion).catch(() => {});
+  }, [version, setVersion]);
+  return version;
 }
 
 /** Run the automatic checks (main window only). */
 export function useAutomaticUpdateChecks(ready: boolean) {
+  const store = useStore();
   const enabled = useAtomValue(settingsAtom).checkAppUpdates;
+  const setState = useSetAtom(updateStateAtom);
   const { checkNow } = useAppUpdate();
+  useAppVersion();
+
   useEffect(() => {
     // Dev builds have no release to compare with.
     if (!ready || !enabled || import.meta.env.DEV) return;
-    checkNow(true);
-    const timer = setInterval(() => checkNow(true), CHECK_EVERY_MS);
-    return () => clearInterval(timer);
-  }, [ready, enabled, checkNow]);
+    let timer: ReturnType<typeof setTimeout>;
+    const run = async () => {
+      await checkNow(false);
+      timer = setTimeout(run, DAY_MS);
+    };
+    timer = setTimeout(async () => {
+      const { updateLastCheck, updateLatest } = store.get(settingsAtom);
+      const dueIn = checkDueIn(updateLastCheck, Date.now());
+      if (dueIn === 0) return run();
+      // Checked within the last day: use that answer, and check again when it is a day old.
+      const current = await getVersion();
+      if (store.get(updateStateAtom).kind === 'idle') {
+        setState(newerBy(current, updateLatest) === 'none' ? { kind: 'upToDate' } : { kind: 'available', version: updateLatest! });
+      }
+      timer = setTimeout(run, dueIn);
+    }, FIRST_CHECK_MS);
+    return () => clearTimeout(timer);
+  }, [ready, enabled, store, setState, checkNow]);
 }

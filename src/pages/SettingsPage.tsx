@@ -1,4 +1,4 @@
-// Settings: a tab per area along the top; each tab picks its sections on the left.
+// Settings: a tab per area along the top, About last; each tab picks its sections on the left.
 import { Box, Tabs, Tab, IconButton, Tooltip } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigation } from '../hooks/useNavigation';
@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import ProxySettings from '../components/ProxySettings';
 import GeneralSettings from '../components/GeneralSettings';
 import AdvancedSettings from '../components/AdvancedSettings';
+import AboutSettings from '../components/AboutSettings';
 import DownloadSettings from '../components/DownloadSettings';
 import Toast from '../components/Toast';
 import { useAtom } from 'jotai';
@@ -61,6 +62,7 @@ export default function SettingsPage() {
             <Tab label={t('settings.proxy')} />
             <Tab label={t('modules.title')} />
             <Tab label={t('settings.advanced')} />
+            <Tab label={t('about.title')} />
           </Tabs>
         </>
       }
@@ -83,6 +85,10 @@ export default function SettingsPage() {
 
       <TabPanel value={currentTab} index={4}>
         <AdvancedSettings />
+      </TabPanel>
+
+      <TabPanel value={currentTab} index={5}>
+        <AboutSettings />
       </TabPanel>
       <Toast message={notice} onClose={() => setNotice(null)} />
     </PageLayout>

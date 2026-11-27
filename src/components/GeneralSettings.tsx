@@ -1,11 +1,10 @@
-// Settings → General: language and theme, how the app runs on the computer, and app updates.
+// Settings → General: language and theme, and how the app runs on the computer. App updates are on the About tab.
 import { IconButton, MenuItem, Select, Switch, Tooltip, Typography } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { useTranslation } from 'react-i18next';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { settingsAtom } from '../stores/settingsStore';
 import { backend, type Theme } from '../backend';
-import AppUpdateSection from './AppUpdateSection';
 import { SectionedPanel, SettingRow, SettingsGroup } from './settings/layout';
 import { ChoiceField } from './settings/fields';
 import { settingsNoticeAtom, useUpdateSettings } from '../hooks/useUpdateSettings';
@@ -21,7 +20,6 @@ export default function GeneralSettings() {
       sections={[
         { id: 'appearance', label: t('settings.section.appearance'), content: <Appearance /> },
         { id: 'system', label: t('settings.section.system'), content: <System /> },
-        { id: 'updates', label: t('update.title'), content: <Updates /> },
       ]}
     />
   );
@@ -127,21 +125,6 @@ function System() {
             ]}
           />
         }
-      />
-    </SettingsGroup>
-  );
-}
-
-function Updates() {
-  const { t } = useTranslation();
-  const settings = useAtomValue(settingsAtom);
-  const update = useUpdateSettings();
-  return (
-    <SettingsGroup>
-      <SettingRow label={<AppUpdateSection />} />
-      <SettingRow
-        label={t('update.automatic')}
-        control={<Switch checked={settings.checkAppUpdates} onChange={(e) => update({ checkAppUpdates: e.target.checked })} />}
       />
     </SettingsGroup>
   );

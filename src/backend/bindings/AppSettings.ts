@@ -42,9 +42,21 @@ userAgent: string | null,
  */
 checkModuleUpdates: boolean, 
 /**
- * Look for a new version of the app at start and every few hours; installing asks first.
+ * Look for a new version of the app a minute after start and once a day; installing asks first.
  */
 checkAppUpdates: boolean, 
+/**
+ * When the app last read the latest release (RFC 3339); a check within a day is reused.
+ */
+updateLastCheck: string | null, 
+/**
+ * The latest version that check found.
+ */
+updateLatest: string | null, 
+/**
+ * `major.minor` the user skipped: those versions are not offered on the main screen.
+ */
+updateSkipped: string | null, 
 /**
  * The user's categories, in sidebar order; their rules tag new downloads.
  */

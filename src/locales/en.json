@@ -375,21 +375,28 @@
     "selectFiles": "Select all"
   },
   "update": {
-    "title": "Updates",
-    "automatic": "Check for new versions automatically (asks before installing)",
-    "current": "Version {{version}}",
-    "checkNow": "Check now",
-    "upToDate": "You have the latest version",
-    "available": "Zoo Downloader {{version}} is available",
-    "downloading": "Downloading {{version}} ({{progress}})",
-    "installing": "Installing; the app restarts when done and downloads continue",
-    "failed": "Update failed: {{message}}",
-    "notes": "What's new",
-    "notesTitle": "What's new in {{version}}",
-    "install": "Update and restart",
-    "retry": "Try again",
+    "available": "Version {{version}} is available",
+    "notes": "Release notes",
+    "skip": "Skip this version",
+    "install": "Update",
     "later": "Later",
-    "noRelease": "No published version found (nothing released yet, or GitHub is unreachable)"
+    "downloading": "Downloading {{version}}",
+    "cancel": "Cancel",
+    "restart": "Restart now",
+    "ready": "{{version}} is ready. Restart to finish updating",
+    "failed": "Update failed: {{reason}}",
+    "manual": "Download manually",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "latest": "You're up to date",
+    "lastChecked": "Last checked: {{time}}",
+    "checkFailed": "Couldn't check for updates",
+    "retry": "Retry",
+    "auto": "Check for updates automatically",
+    "reason": {
+      "signature": "the signature didn't match",
+      "network": "couldn't connect"
+    }
   },
   "errorBoundary": {
     "title": "Something went wrong on this screen",
@@ -401,5 +408,13 @@
     "pauseAll": "Pause all",
     "resumeAll": "Resume all",
     "quit": "Quit"
+  },
+  "about": {
+    "title": "About",
+    "tagline": "A multi-threaded download manager with a browser extension and site modules",
+    "source": "Source code",
+    "issues": "Report a problem",
+    "license": "License: {{license}}",
+    "otherProjects": "More by the author"
   }
 }

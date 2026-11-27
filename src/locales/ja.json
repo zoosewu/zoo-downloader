@@ -375,21 +375,28 @@
     "selectFiles": "すべて選択"
   },
   "update": {
-    "title": "アップデート",
-    "automatic": "新しいバージョンを自動確認（インストール前に確認）",
-    "current": "バージョン {{version}}",
-    "checkNow": "今すぐ確認",
-    "upToDate": "最新バージョンです",
-    "available": "Zoo Downloader {{version}} が利用可能です",
-    "downloading": "{{version}} をダウンロード中（{{progress}}）",
-    "installing": "インストール中。完了後に再起動し、ダウンロードは続行されます",
-    "failed": "アップデートに失敗しました：{{message}}",
-    "notes": "変更内容",
-    "notesTitle": "{{version}} の変更内容",
-    "install": "更新して再起動",
-    "retry": "再試行",
+    "available": "新しいバージョン {{version}} があります",
+    "notes": "リリースノート",
+    "skip": "このバージョンをスキップ",
+    "install": "更新",
     "later": "後で",
-    "noRelease": "公開済みのバージョン情報が見つかりません（未公開、または GitHub に接続できません）"
+    "downloading": "{{version}} をダウンロード中",
+    "cancel": "キャンセル",
+    "restart": "今すぐ再起動",
+    "ready": "{{version}} の準備ができました。再起動すると更新が完了します",
+    "failed": "更新に失敗しました：{{reason}}",
+    "manual": "手動でダウンロード",
+    "check": "更新を確認",
+    "checking": "確認中…",
+    "latest": "最新バージョンです",
+    "lastChecked": "最終確認：{{time}}",
+    "checkFailed": "更新を確認できませんでした",
+    "retry": "再試行",
+    "auto": "自動的に更新を確認",
+    "reason": {
+      "signature": "署名を確認できませんでした",
+      "network": "接続できませんでした"
+    }
   },
   "errorBoundary": {
     "title": "この画面でエラーが発生しました",
@@ -401,5 +408,13 @@
     "pauseAll": "すべて一時停止",
     "resumeAll": "すべて再開",
     "quit": "終了"
+  },
+  "about": {
+    "title": "このアプリについて",
+    "tagline": "ブラウザー拡張機能とサイトモジュールを備えたマルチスレッドのダウンロードマネージャー",
+    "source": "ソースコード",
+    "issues": "問題を報告",
+    "license": "ライセンス：{{license}}",
+    "otherProjects": "作者のほかのプロジェクト"
   }
 }

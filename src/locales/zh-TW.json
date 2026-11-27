@@ -375,21 +375,28 @@
     "selectFiles": "全選"
   },
   "update": {
-    "title": "更新",
-    "automatic": "自動檢查新版本（安裝前會先詢問）",
-    "current": "目前版本 {{version}}",
-    "checkNow": "立即檢查",
-    "upToDate": "已是最新版本",
-    "available": "Zoo Downloader {{version}} 已推出",
-    "downloading": "正在下載 {{version}}（{{progress}}）",
-    "installing": "正在安裝，完成後會自動重新啟動；進行中的下載會在重新啟動後繼續",
-    "failed": "更新失敗：{{message}}",
-    "notes": "更新內容",
-    "notesTitle": "{{version}} 更新內容",
-    "install": "更新並重新啟動",
-    "retry": "再試一次",
+    "available": "有新版本 {{version}}",
+    "notes": "版本說明",
+    "skip": "略過此版本",
+    "install": "更新",
     "later": "稍後",
-    "noRelease": "找不到已發布的版本資訊（尚未發布，或暫時連不到 GitHub）"
+    "downloading": "正在下載 {{version}}",
+    "cancel": "取消",
+    "restart": "立即重新啟動",
+    "ready": "{{version}} 已下載，重新啟動後完成更新",
+    "failed": "更新失敗：{{reason}}",
+    "manual": "手動下載",
+    "check": "檢查更新",
+    "checking": "檢查中…",
+    "latest": "已是最新版",
+    "lastChecked": "上次檢查：{{time}}",
+    "checkFailed": "無法檢查更新",
+    "retry": "重試",
+    "auto": "自動檢查更新",
+    "reason": {
+      "signature": "簽章驗證失敗",
+      "network": "無法連線"
+    }
   },
   "errorBoundary": {
     "title": "這個畫面發生錯誤",
@@ -401,5 +408,13 @@
     "pauseAll": "全部暫停",
     "resumeAll": "全部繼續",
     "quit": "結束"
+  },
+  "about": {
+    "title": "關於",
+    "tagline": "多執行緒下載管理器，搭配瀏覽器擴充與網站模組",
+    "source": "原始碼",
+    "issues": "回報問題",
+    "license": "授權 {{license}}",
+    "otherProjects": "作者的其他專案"
   }
 }
