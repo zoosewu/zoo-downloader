@@ -2,6 +2,7 @@
 name = "zoo-core"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Download core for zoo-downloader. No Tauri or JS runtime dependencies."
 publish = false
 

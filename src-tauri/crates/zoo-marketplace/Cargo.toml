@@ -2,6 +2,7 @@
 name = "zoo-marketplace"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Site-module marketplaces: sources, catalogs, install, update, consent. No Tauri."
 publish = false
 

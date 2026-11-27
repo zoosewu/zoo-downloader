@@ -356,7 +356,9 @@ Contributions are welcome! Please follow these guidelines:
 
 ## 📝 License
 
-The code is licensed under the [GNU AGPL-3.0](LICENSE). Bundled third-party libraries keep their own licenses.
+Licensed under [AGPL-3.0](LICENSE). A commercial license is available for use outside the terms of the AGPL-3.0 (for example in closed-source products); please get in touch through [GitHub Issues](https://github.com/zoosewu/zoo-downloader/issues).
+
+Bundled third-party libraries keep their own licenses. Contributions are accepted under the terms in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 🙏 Acknowledgments
 

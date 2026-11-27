@@ -2,6 +2,7 @@
 name = "zoo-module"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Site module host (`zoo-module serve`) and module developer CLI. The only crate that links V8."
 publish = false
 

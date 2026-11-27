@@ -2,6 +2,7 @@
 name = "zoo-module-client"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "What the app needs to talk to the zoo-module host: wire types and the Supervisor. No JS runtime."
 publish = false
 
