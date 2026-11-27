@@ -475,45 +475,6 @@ async fn modules_the_app_no_longer_ships_are_downloaded_again() {
     assert!(market.restore_missing().await.is_empty());
 }
 
-/// The official catalog was renamed (`official` → `zoo`): installed modules move to the new
-/// name with their settings and credentials, and the old source goes.
-#[tokio::test]
-async fn a_renamed_official_marketplace_takes_its_modules_along() {
-    let mut demo = Module::demo("1.0.0", &["demo.example"]);
-    demo.credentials = vec!["password"];
-    let other = Module { id: "other", ..Module::demo("1.0.0", &["other.example"]) };
-    let official = tempfile::tempdir().unwrap();
-    folder_marketplace(official.path(), "official", &[&demo, &other]);
-    let (data, secrets) = (tempfile::tempdir().unwrap(), Arc::new(MemorySecrets::default()));
-    let market = open(data.path(), &secrets);
-    market.set_official(&official.path().to_string_lossy()).await.unwrap();
-    for key in ["demo@official", "other@official"] {
-        market.install(market.plan_install(key).await.unwrap()).unwrap();
-    }
-    market.set_credentials("demo@official", BTreeMap::from([("password".into(), Some("s3cret".into()))])).unwrap();
-    market.set_auto_start("demo@official", true).unwrap();
-    market.set_enabled("other@official", false).unwrap();
-    market.move_to("other@official", 0).unwrap();
-
-    folder_marketplace(official.path(), "zoo", &[&demo, &other]);
-    let market = open(data.path(), &secrets);
-    market.set_official(&official.path().to_string_lossy()).await.unwrap();
-
-    let sources: Vec<_> = market.sources().into_iter().map(|s| s.name).collect();
-    assert_eq!(sources, ["zoo"]);
-    let installed = market.installed();
-    assert_eq!(installed.iter().map(|m| m.key.as_str()).collect::<Vec<_>>(), ["other@zoo", "demo@zoo"], "order kept");
-    let demo_now = &installed[1];
-    assert!(demo_now.auto_start && demo_now.credentials[0].set && !demo_now.missing);
-    assert!(!installed[0].enabled);
-    assert_eq!(secrets.get("demo@zoo/password").unwrap().map(|s| s.0), Some("s3cret".into()));
-    assert_eq!(secrets.get("demo@official/password").unwrap(), None, "the old account is gone");
-    assert_eq!(market.resolver_modules().iter().map(|r| r.module.id.clone()).collect::<Vec<_>>(), ["demo@zoo"]);
-    // Every later start finds nothing to move.
-    market.set_official(&official.path().to_string_lossy()).await.unwrap();
-    assert_eq!(market.installed().len(), 2);
-}
-
 /// A module in use looks for its updates, at most once per `max_age`.
 #[tokio::test]
 async fn a_module_in_use_finds_its_update() {

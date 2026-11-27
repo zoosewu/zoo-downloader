@@ -323,9 +323,6 @@ impl Marketplace {
     async fn add(&self, input: &str, trust: Trust) -> Result<SourceInfo, MarketError> {
         let location = Location::parse(input)?;
         let (catalog, commit) = self.load(&location).await?;
-        if trust == Trust::Official {
-            self.rename_official(&catalog.name)?;
-        }
         let record = SourceRecord {
             name: catalog.name.clone(),
             location: input.to_string(),
@@ -354,49 +351,6 @@ impl Marketplace {
             Ok(())
         })?;
         Ok(info)
-    }
-
-    /// The official catalog got a new name (`official` → `zoo`): its installed modules move to
-    /// the new name (`baidu@official` → `baidu@zoo`) with their settings and stored credentials,
-    /// and the source under the old name goes. Credentials are copied before the state changes
-    /// and the old ones deleted after, so a failure never loses them.
-    fn rename_official(&self, name: &str) -> Result<(), MarketError> {
-        let moving: Vec<InstalledRecord> = {
-            let st = self.state.lock().unwrap();
-            let old: Vec<&str> = st.sources.iter().filter(|s| s.trust == Trust::Official && s.name != name).map(|s| s.name.as_str()).collect();
-            if old.is_empty() {
-                return Ok(());
-            }
-            st.installed.iter().filter(|m| old.contains(&m.marketplace.as_str())).cloned().collect()
-        };
-        let renamed = |m: &InstalledRecord| InstalledRecord { marketplace: name.to_string(), ..m.clone() };
-        let accounts = |m: &InstalledRecord| -> Vec<(String, String)> {
-            let new = renamed(m).key();
-            m.manifest.permissions.credentials.iter().map(|f| (account(&m.key(), &f.key), account(&new, &f.key))).collect()
-        };
-        for (from, to) in moving.iter().flat_map(accounts) {
-            if let Some(secret) = self.secrets.get(&from).map_err(MarketError::Io)? {
-                self.secrets.set(&to, &secret).map_err(MarketError::Io)?;
-            }
-        }
-        self.change(|st| {
-            st.sources.retain(|s| !(s.trust == Trust::Official && s.name != name));
-            let taken: Vec<String> = st.installed.iter().filter(|m| m.marketplace == name).map(|m| m.id.clone()).collect();
-            // A module already installed under the new name (an older app added the renamed
-            // catalog beside the old one) keeps that copy.
-            st.installed.retain(|m| !(moving.iter().any(|old| old.key() == m.key()) && taken.contains(&m.id)));
-            for m in st.installed.iter_mut().filter(|m| moving.iter().any(|old| old.key() == m.key())) {
-                m.marketplace = name.to_string();
-            }
-            Ok(())
-        })?;
-        for (from, _) in moving.iter().flat_map(accounts) {
-            if let Err(e) = self.secrets.delete(&from) {
-                log::warn!("cannot delete the old credential {from}: {e}");
-            }
-        }
-        log::info!("official marketplace renamed to {name:?}: moved {} module(s)", moving.len());
-        Ok(())
     }
 
     pub fn sources(&self) -> Vec<SourceInfo> {
