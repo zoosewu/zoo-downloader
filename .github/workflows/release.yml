@@ -1,15 +1,14 @@
-# Pushing a tag vX.Y.Z (see `pnpm release`) builds every platform and publishes the release.
-#   prepare  check the versions, create a draft release with generated notes, attach the
-#            browser extension
-#   build    one job per platform: installers plus updater bundles signed with
-#            the ZOO_SIGNING_KEY secret, and the zoo-module CLI; then the platform adds itself to
-#            latest.json and publishes the release (the first one to finish makes it public), so
-#            a slow or failed platform does not hold back the others. Installed apps find the
-#            update through releases/latest/download/latest.json
-#   finish   after every build, even failed ones: rewrite latest.json from all bundles (an entry
-#            can be lost when two builds write at once) and fail if a platform is missing.
-#            "Re-run failed jobs" builds the missing platform and runs this again.
-name: Release
+# Pushing a tag vX.Y.Z (see `pnpm release`) builds every platform; zoo-release publishes
+# (https://github.com/zoosewu/zoo-release, docs/RELEASE.md).
+#   build      one job per platform: installers, updater bundles signed with ZOO_SIGNING_KEY,
+#              and the zoo-module CLI (the marketplace's CI runs it), as a release-<target> artifact
+#   extension  the browser extension as a zip
+#   release    zoo-release's shared workflow: sha256, notes from the commits (git-cliff) followed
+#              by .github/release-notes.md, latest.json, a draft release, then publish. Nothing is
+#              published until every platform is built.
+# Built here rather than with zoo-release's tauri-build.yml: on macOS Tauri names the updater
+# bundle <app>.app.tar.gz for both architectures, so each gets its architecture added here.
+name: release
 
 on:
   push:
@@ -18,42 +17,8 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.ref }}
-
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.release.outputs.id }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-      - run: node scripts/version.mjs check "$GITHUB_REF_NAME"
-      - name: Draft release
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # The create response carries the id; listing releases right after may not show the draft yet.
-          # The body (how to open the app on macOS) comes before the generated notes.
-          id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$GITHUB_REF_NAME" \
-            -f name="Zoo Downloader ${GITHUB_REF_NAME#v}" -F body=@.github/release-notes.md \
-            -F draft=true -F generate_release_notes=true --jq .id)
-          test -n "$id"
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-      - name: Browser extension
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          name="zoo-downloader-browser-extension-${GITHUB_REF_NAME}.zip"
-          (cd browser-extension && zip -r "../$name" . -x 'test/*' -x 'node_modules/*')
-          gh release upload "$GITHUB_REF_NAME" "$name"
-
   build:
-    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -62,13 +27,21 @@ jobs:
             target: x86_64-pc-windows-msvc
           - os: macos-latest
             target: aarch64-apple-darwin
+            arch: aarch64
           - os: macos-15-intel
             target: x86_64-apple-darwin
+            arch: x64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Version from the tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - name: Linux packages
         if: runner.os == 'Linux'
         run: |
@@ -87,48 +60,70 @@ jobs:
           workspaces: src-tauri
           key: ${{ matrix.target }}
       - run: pnpm install --frozen-lockfile
-      - uses: tauri-apps/tauri-action@v1
+      - run: node scripts/version.mjs set "$VERSION"
+      - name: Build
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.ZOO_SIGNING_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.ZOO_SIGNING_PASSWORD }}
         with:
-          releaseId: ${{ needs.prepare.outputs.release_id }}
-          releaseDraft: true
-          uploadUpdaterJson: false
-          updaterJsonPreferNsis: true
           tauriScript: pnpm tauri
           args: --config src-tauri/tauri.bundle.json --target ${{ matrix.target }}
-      # The site-module CLI on its own, for module developers and the marketplace's CI
-      # (`zoo-module test` replays recorded cases), built by the step above as a sidecar.
-      - name: zoo-module
-        shell: bash
+      - name: Collect
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" src-tauri/binaries/zoo-module-${{ matrix.target }}*
-      - name: Publish
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
-          TAG: ${{ github.ref_name }}
+          PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
         run: |
-          node scripts/updater-json.mjs
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          # Files only: artifactPaths also lists the .app folder, which the .app.tar.gz holds.
+          python3 - <<'EOF'
+          import json, os, shutil
+          out = os.path.join(os.environ["RUNNER_TEMP"], "out")
+          version, arch = os.environ["VERSION"], os.environ["ARCH"]
+          for p in json.loads(os.environ["PATHS"]):
+              if not os.path.isfile(p):
+                  continue
+              name = os.path.basename(p)
+              for ext in (".app.tar.gz", ".app.tar.gz.sig"):
+                  if name.endswith(ext):
+                      name = f"zoo-downloader_{version}_{arch}{ext}"
+              shutil.copy2(p, os.path.join(out, name))
+              print(name)
+          EOF
+          cp src-tauri/binaries/zoo-module-"$TARGET"* "$out/"
+          ls -la "$out"
+          if ! ls "$out"/*.sig >/dev/null 2>&1; then
+            echo "::error::no updater signature: are the ZOO_SIGNING_KEY and ZOO_SIGNING_PASSWORD secrets set?"; exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
 
-  finish:
-    needs: [prepare, build]
-    if: always() && needs.prepare.result == 'success'
+  extension:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - run: cd browser-extension && zip -r "$RUNNER_TEMP/zoo-downloader-browser-extension.zip" . -x 'test/*' -x 'node_modules/*'
+      - uses: actions/upload-artifact@v7
         with:
-          node-version: 24
-      - name: latest.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
-          TAG: ${{ github.ref_name }}
-        run: node scripts/updater-json.mjs --all
+          name: release-browser-extension
+          path: ${{ runner.temp }}/zoo-downloader-browser-extension.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build, extension]
+    uses: zoosewu/zoo-release/.github/workflows/release.yml@v1
+    with:
+      name: Zoo Downloader
+      platforms: >-
+        {"windows-x86_64": "*_x64-setup.exe",
+         "darwin-aarch64": "*_aarch64.app.tar.gz",
+         "darwin-x86_64": "*_x64.app.tar.gz",
+         "linux-x86_64": "*_amd64.AppImage"}
+      publish: false
+    secrets: inherit

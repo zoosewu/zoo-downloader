@@ -7,6 +7,3 @@ App 還沒有經過 Apple 公證，第一次打開時 macOS 會說無法驗證�
 The app is not notarized by Apple yet, so macOS says it cannot verify it. After dragging it to Applications, either:
 - Open it once and click Done; then in System Settings → Privacy & Security, click Open Anyway next to "zoo-downloader was blocked", enter your password and open it again.
 - Or run `xattr -dr com.apple.quarantine /Applications/zoo-downloader.app` in Terminal.
-
----
-

@@ -1,5 +1,6 @@
-// Prepare a release: set the version, commit, tag. Pushing the tag starts the Release
-// workflow (.github/workflows/release.yml), which builds every platform and publishes.
+// Prepare a release: set the version, commit, tag. Pushing the tag starts the release
+// workflow (.github/workflows/release.yml), which builds every platform and publishes; the
+// build writes the tag's version into the project itself, so the commit only keeps main in step.
 //   pnpm release 0.2.0        or: pnpm release patch | minor | major
 // Nothing is pushed; the script prints the command.
 import { execFileSync } from 'node:child_process';
@@ -45,7 +46,8 @@ if (git('tag', '--list', tag)) {
 
 setVersion(version);
 git('add', 'package.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock');
-git('commit', '-m', `release: ${tag}`);
+// chore(release) is left out of the release notes (zoo-release's git-cliff settings).
+git('commit', '-m', `chore(release): ${tag}`);
 git('tag', '-a', tag, '-m', tag);
 console.log(`${current} -> ${version}; committed and tagged ${tag}.`);
 console.log(`Publish with:  git push origin main ${tag}`);
