@@ -1,4 +1,4 @@
-// Settings Page - App settings and Proxy management
+// Settings: a tab per area along the top; each tab picks its sections on the left.
 import { Box, Tabs, Tab, IconButton, Tooltip } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigation } from '../hooks/useNavigation';
@@ -7,6 +7,10 @@ import { useTranslation } from 'react-i18next';
 import ProxySettings from '../components/ProxySettings';
 import GeneralSettings from '../components/GeneralSettings';
 import AdvancedSettings from '../components/AdvancedSettings';
+import DownloadSettings from '../components/DownloadSettings';
+import Toast from '../components/Toast';
+import { useAtom } from 'jotai';
+import { settingsNoticeAtom } from '../hooks/useUpdateSettings';
 import ModulesSettings from '../components/modules/ModulesSettings';
 import PageLayout from '../components/PageLayout';
 
@@ -27,7 +31,7 @@ function TabPanel(props: TabPanelProps) {
       aria-labelledby={`settings-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 2, maxWidth: 960, mx: 'auto' }}>{children}</Box>}
+      {value === index && <Box sx={{ p: 3, maxWidth: 1040, mx: 'auto' }}>{children}</Box>}
     </div>
   );
 }
@@ -36,6 +40,7 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const [currentTab, setCurrentTab] = useState(0);
   const { navigateTo } = useNavigation();
+  const [notice, setNotice] = useAtom(settingsNoticeAtom);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setCurrentTab(newValue);
@@ -51,10 +56,11 @@ export default function SettingsPage() {
             </IconButton>
           </Tooltip>
           <Tabs value={currentTab} onChange={handleTabChange} sx={{ flex: 1, alignSelf: 'flex-end' }}>
-          <Tab label={t('settings.general')} />
-          <Tab label={t('settings.proxy')} />
-          <Tab label={t('modules.title')} />
-          <Tab label={t('settings.advanced')} />
+            <Tab label={t('settings.general')} />
+            <Tab label={t('settings.downloads')} />
+            <Tab label={t('settings.proxy')} />
+            <Tab label={t('modules.title')} />
+            <Tab label={t('settings.advanced')} />
           </Tabs>
         </>
       }
@@ -64,16 +70,21 @@ export default function SettingsPage() {
       </TabPanel>
 
       <TabPanel value={currentTab} index={1}>
-        <ProxySettings />
+        <DownloadSettings />
       </TabPanel>
 
       <TabPanel value={currentTab} index={2}>
-        <ModulesSettings />
+        <ProxySettings />
       </TabPanel>
 
       <TabPanel value={currentTab} index={3}>
+        <ModulesSettings />
+      </TabPanel>
+
+      <TabPanel value={currentTab} index={4}>
         <AdvancedSettings />
       </TabPanel>
+      <Toast message={notice} onClose={() => setNotice(null)} />
     </PageLayout>
   );
 }

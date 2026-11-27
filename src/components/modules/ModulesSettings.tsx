@@ -10,13 +10,12 @@ import {
   DialogActions,
   DialogContent,
   DialogContentText,
+  Checkbox,
   FormControlLabel,
   IconButton,
   Paper,
   Stack,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -28,7 +27,7 @@ import {
   Key as CredentialsIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { useAtom } from 'jotai';
+import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import { backend, type InstalledInfo, type SourceInfo } from '../../backend';
 import { useSiteModules } from '../../hooks/useSiteModules';
@@ -37,11 +36,12 @@ import { useInstall } from './ConsentDialog';
 import CredentialsDialog from './CredentialsDialog';
 import Toast, { type ToastMessage } from '../Toast';
 import { localized } from '../../utils/localized';
+import { SectionedPanel, SettingRow, SettingsGroup } from '../settings/layout';
+import { useUpdateSettings } from '../../hooks/useUpdateSettings';
 
 export default function ModulesSettings() {
   const { t } = useTranslation();
   const { installed, sources, error: loadError, loaded } = useSiteModules();
-  const [tab, setTab] = useState(0);
   /** A failed command: a toast, so the list does not move. */
   const [failure, setFailure] = useState<ToastMessage | null>(null);
   const setError = useCallback((text: string | null) => setFailure(text ? { severity: 'error', text } : null), []);
@@ -69,14 +69,14 @@ export default function ModulesSettings() {
         </Alert>
       )}
       <Toast message={failure} onClose={() => setFailure(null)} />
-      <Tabs value={tab} onChange={(_, next) => setTab(next)} sx={{ mb: 2 }}>
-        <Tab label={t('modules.installed.title')} />
-        <Tab label={t('modules.sources.title')} />
-        <Tab label={t('modules.browse.title')} />
-      </Tabs>
-      {tab === 0 && <Installed modules={installed} run={run} install={install} busy={busy} />}
-      {tab === 1 && <Sources sources={sources} run={run} />}
-      {tab === 2 && <Browse sources={sources} installed={installed} install={install} busy={busy} />}
+      <SectionedPanel
+        id="modules"
+        sections={[
+          { id: 'installed', label: t('modules.installed.title'), content: <Installed modules={installed} run={run} install={install} busy={busy} /> },
+          { id: 'sources', label: t('modules.sources.title'), content: <Sources sources={sources} run={run} /> },
+          { id: 'browse', label: t('modules.browse.title'), content: <Browse sources={sources} installed={installed} install={install} busy={busy} /> },
+        ]}
+      />
       {dialog}
     </Box>
   );
@@ -96,21 +96,20 @@ function Installed({
   busy: string | null;
 }) {
   const { t, i18n } = useTranslation();
-  const [settings, setSettings] = useAtom(settingsAtom);
+  const settings = useAtomValue(settingsAtom);
+  const update = useUpdateSettings();
   const [credentials, setCredentials] = useState<InstalledInfo | null>(null);
   const [removing, setRemoving] = useState<InstalledInfo | null>(null);
   const editing = modules.find((m) => m.key === credentials?.key) ?? null;
 
-  const toggleUpdateCheck = run(async () =>
-    setSettings(await backend.settings.update({ ...settings, checkModuleUpdates: !settings.checkModuleUpdates }))
-  );
-
   return (
     <Stack spacing={1.5}>
-      <FormControlLabel
-        control={<Switch checked={settings.checkModuleUpdates} onChange={toggleUpdateCheck} />}
-        label={t('modules.installed.checkOnStart')}
-      />
+      <SettingsGroup>
+        <SettingRow
+          label={t('modules.installed.checkOnStart')}
+          control={<Switch checked={settings.checkModuleUpdates} onChange={(e) => update({ checkModuleUpdates: e.target.checked })} />}
+        />
+      </SettingsGroup>
       {modules.length === 0 && (
         <Typography color="text.secondary" sx={{ p: 2 }}>
           {t('modules.installed.empty')}
@@ -177,7 +176,7 @@ function Installed({
             <FormControlLabel
               sx={{ mt: 0.5 }}
               control={
-                <Switch size="small" checked={m.autoStart} onChange={run(() => backend.modules.setAutoStart(m.key, !m.autoStart))} />
+                <Checkbox size="small" checked={m.autoStart} onChange={run(() => backend.modules.setAutoStart(m.key, !m.autoStart))} />
               }
               label={
                 <Typography variant="body2" color={settings.autoStartBrowser || settings.autoStartCopied ? 'text.primary' : 'text.secondary'}>

@@ -132,11 +132,9 @@
     "advanced": "詳細",
     "downloadPath": "ダウンロードパス",
     "selectPath": "フォルダを選択",
-    "maxConcurrent": "最大同時ダウンロード数",
-    "maxConcurrentHelp": "空欄で無制限",
-    "maxThreads": "ダウンロードあたりの最大スレッド数",
-    "clipboardMonitor": "クリップボードを監視",
-    "notifications": "通知を有効にする",
+    "maxConcurrent": "同時ダウンロード数",
+    "maxThreads": "ダウンロードごとの接続数",
+    "notifications": "ダウンロード完了時に通知",
     "language": "言語",
     "languageSystem": "システムに合わせる",
     "languageFolder": "カスタム言語：言語フォルダーを開き、_template.json にならって <言語コード>.json を追加",
@@ -145,24 +143,15 @@
     "themeLight": "ライト",
     "themeDark": "ダーク",
     "systemTray": "閉じるとトレイに格納",
-    "launchAtStartup": "ログイン時に起動",
-    "startInTray": "ログイン時の起動ではトレイにだけ表示",
-    "uiSettings": "UI設定",
     "speedLimit": "速度制限",
-    "speedLimitMode": "速度制限モード",
     "unlimited": "無制限",
     "fixed": "固定",
-    "speedLimitValue": "速度制限 (KB/s)",
-    "autoRetry": "自動再試行",
-    "enableAutoRetry": "自動再試行を有効にする",
+    "autoRetry": "失敗したダウンロードを再試行",
     "maxRetryCount": "最大再試行回数",
-    "retryInterval": "再試行間隔（秒）",
-    "proxySettings": "プロキシ設定",
-    "importExport": "インポート/エクスポート",
+    "retryInterval": "再試行の間隔",
     "export": "設定をエクスポート",
     "import": "設定をインポート",
-    "resetToDefaults": "デフォルトにリセット",
-    "saveSuccess": "設定を保存しました",
+    "resetToDefaults": "既定値に戻す",
     "resetSuccess": "設定をデフォルトにリセットしました",
     "exportSuccess": "設定をエクスポートしました",
     "importSuccess": "設定をインポートしました",
@@ -174,23 +163,51 @@
       "exportFailed": "設定のエクスポートに失敗しました",
       "importFailed": "設定のインポートに失敗しました"
     },
-    "proxyFallbackDirect": "使用できるプロキシがない場合は直接接続する",
     "userAgentHelp": "ダウンロードが User-Agent を指定しないときに使います。モジュールやタスクの指定が優先されます。",
     "title": "設定",
-    "autoStartBrowser": "ブラウザーでクリックしたダウンロードをすぐ開始（追加ウィンドウなし）",
-    "autoStartCopied": "コピーしたリンクをすぐダウンロード（追加ウィンドウなし）",
     "extension": {
       "title": "ブラウザー拡張機能",
-      "store": "Edge アドオン ストアからインストール",
+      "store": "ストアからインストール",
       "openStore": "ストアのページを開く",
-      "manual": "手動で読み込む",
-      "step1": "拡張機能ページを開き、「開発者モード」をオンにする",
-      "step2": "「パッケージ化されていない拡張機能を読み込む」でこのフォルダーを選ぶ",
+      "manual": "手動でインストール",
+      "step1": "ブラウザーの拡張機能ページを開く",
+      "step2": "「開発者モード」をオンにする",
       "showFolder": "フォルダーを表示",
       "noBrowser": "Edge または Chrome が見つかりません。ブラウザーの拡張機能ページで下のフォルダーを読み込んでください。",
       "afterUpdate": "アプリの更新後、拡張機能ページでこの拡張機能の「再読み込み」を押すと新しい版が使われます。",
-      "pasteAddress": "{{address}} をコピーしました。ブラウザーのアドレスバーに貼り付けて Enter を押してください（ブラウザーは他のプログラムからこのページを開けません）。"
-    }
+      "pasteAddress": "{{address}} をコピーしました。ブラウザーのアドレスバーに貼り付けて Enter を押してください（ブラウザーは他のプログラムからこのページを開けません）。",
+      "storeHelp": "Edge でも Chrome でも Edge ストアからインストールでき、自動で更新されます。",
+      "manualHelp": "ストアを使えないときは、アプリに付属のフォルダーを読み込みます。",
+      "howTo": "手順を見る",
+      "manualTitle": "ブラウザー拡張機能を手動でインストール",
+      "step3": "「展開して読み込み」を押し、このフォルダーを選ぶ"
+    },
+    "downloads": "ダウンロード",
+    "section": {
+      "appearance": "外観",
+      "system": "システム",
+      "download": "ダウンロード",
+      "links": "新しいリンク",
+      "file": "設定ファイル"
+    },
+    "startup": {
+      "label": "サインイン時",
+      "off": "起動しない",
+      "window": "起動してウィンドウを表示",
+      "tray": "起動してトレイに常駐"
+    },
+    "seconds": "秒",
+    "links": {
+      "copied": "コピーしたリンク",
+      "browser": "ブラウザーからのリンク",
+      "ignore": "クリップボードを監視しない",
+      "ask": "追加ウィンドウを開く",
+      "start": "すぐにダウンロード",
+      "help": "サイトモジュールごとに、すぐにダウンロードするか追加ウィンドウを開くかを設定できます（サイトモジュール → インストール済み）。"
+    },
+    "fileHelp": "設定を JSON ファイルに保存、またはファイルから読み込みます。",
+    "resetHelp": "カテゴリ、モジュール、プロキシはそのままです。",
+    "reset": "戻す"
   },
   "modules": {
     "needsNewerApp": "{{version}} には新しい Zoo Downloader が必要",
@@ -258,7 +275,12 @@
     "decline": "スキップ"
   },
   "proxy": {
-    "enabled": "プロキシを有効にする"
+    "mode": {
+      "label": "プロキシ経由でダウンロード",
+      "off": "使わない",
+      "fallback": "使う（すべて使えないときは直接接続）",
+      "only": "プロキシのみ"
+    }
   },
   "headers": {
     "toggle": "User-Agent、Referer、Cookie",

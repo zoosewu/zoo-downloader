@@ -41,6 +41,40 @@ import {
   resetFailedProxiesAtom,
 } from '../stores/proxyStore';
 import { backend, type ProxyStatus } from '../backend';
+import { useTranslation } from 'react-i18next';
+import { settingsAtom } from '../stores/settingsStore';
+import { useUpdateSettings } from '../hooks/useUpdateSettings';
+import { SettingRow, SettingsGroup } from './settings/layout';
+import { ChoiceField } from './settings/fields';
+
+type Mode = 'off' | 'fallback' | 'only';
+
+/** Whether downloads go through the proxies, and what happens when none of them works. */
+function ProxyMode() {
+  const { t } = useTranslation();
+  const settings = useAtomValue(settingsAtom);
+  const update = useUpdateSettings();
+  const mode: Mode = !settings.enableProxy ? 'off' : settings.proxyFallbackDirect ? 'fallback' : 'only';
+  return (
+    <SettingsGroup>
+      <SettingRow
+        label={t('proxy.mode.label')}
+        control={
+          <ChoiceField<Mode>
+            value={mode}
+            minWidth={280}
+            onChange={(next) => update({ enableProxy: next !== 'off', proxyFallbackDirect: next !== 'only' })}
+            options={[
+              { value: 'off', label: t('proxy.mode.off') },
+              { value: 'fallback', label: t('proxy.mode.fallback') },
+              { value: 'only', label: t('proxy.mode.only') },
+            ]}
+          />
+        }
+      />
+    </SettingsGroup>
+  );
+}
 
 const STATUS_COLOR: Record<ProxyStatus, 'success' | 'warning' | 'error' | 'info' | 'default'> = {
   unknown: 'default',
@@ -117,6 +151,7 @@ export default function ProxySettings() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <ProxyMode />
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
         {statItems.map(([label, value, color]) => (
           <Box key={label}>

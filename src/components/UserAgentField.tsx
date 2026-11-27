@@ -9,9 +9,11 @@ interface UserAgentFieldProps {
   /** Shown when empty: what is sent instead. */
   placeholder?: string;
   helperText?: string;
+  /** Inside a row that already names it: no label, no margin. */
+  bare?: boolean;
 }
 
-export default function UserAgentField({ value, onChange, placeholder, helperText }: UserAgentFieldProps) {
+export default function UserAgentField({ value, onChange, placeholder, helperText, bare }: UserAgentFieldProps) {
   const { t } = useTranslation();
   return (
     <Autocomplete
@@ -28,10 +30,11 @@ export default function UserAgentField({ value, onChange, placeholder, helperTex
       renderInput={(params) => (
         <TextField
           {...params}
-          label={t('headers.userAgent')}
+          label={bare ? undefined : t('headers.userAgent')}
+          size={bare ? 'small' : undefined}
           placeholder={placeholder}
           helperText={helperText}
-          margin="normal"
+          margin={bare ? 'none' : 'normal'}
           fullWidth
         />
       )}

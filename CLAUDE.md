@@ -530,6 +530,7 @@ chmod +x .git/hooks/pre-commit
   - 事件：`download-event`（含 zoo-core 判定的 `finished`，通知只看它）、`downloads-resync`、`modules-changed`（本機模組靠檔案系統通知）、`proxies-changed`（最多每 0.5 秒）、`clipboard-link`、`captcha-event`、`add-items-ready`、`app-ready`（前端先訂閱再問一次 `app_ready`）。
   - 前端共用狀態：下載（`downloadStore`，`useDownloadSync`）、模組（`useSiteModules`，`useModulesSync`）、設定（`settingsAtom`；設定頁編輯的是草稿，存檔後以後端回傳值為準）。
   - 保留的計時器只限「時間本身就是條件」：檢查更新（啟動時＋定期）、倒數顯示（`useNow`）、相對時間（`useRelativeTime`，所有列共用一個 15 秒時鐘，文字變了的格子才重畫）、排程、重試間隔、限速、每秒 flush、事件節流（進度 250 ms、只在有下載時；分段圖 500 ms）。
+- 設定頁（2026-11-27）：上方分頁（一般、下載、代理、網站模組、進階），分頁內的小節在左側（`settings/layout.tsx` 的 `SectionedPanel`）；每項設定一列（`SettingRow`，名稱在左、控制項在右），同組放在一個外框（`SettingsGroup`）。設定改了就存（`useUpdateSettings`，依序送出、以後端回傳為準；數字欄離開或按 Enter 才存），沒有儲存按鈕。有從屬關係的開關合併成一個下拉選單（剪貼簿、開機啟動、代理），不做第二層開關。
 - React 19 開發版會為每次 render 記 `performance.measure()`，沒有上限；`main.tsx` 在開發模式定期清除（曾讓 WebView 約 2.5 小時後當機）。
 - 驗證方式：在開發模式用 CDP 數 `performance.getEntriesByType('measure')` 的元件名稱（每秒、每個元件幾次）。
 5. **Sticky Header**: 表格頭部固定，改善大量下載時的用戶體驗
@@ -593,7 +594,7 @@ chmod +x .git/hooks/pre-commit
 - `crates/zoo-module/tests/sdk.rs`：執行期全域物件與 `globals.d.ts` 完全相同；宣告的每個成員都存在；JSON Schema 與 `Manifest::parse` 對同一組範例的判定相同。
 - `src/__tests__/module-sdk.test.ts`：範本能通過型別檢查；不支援的 API（`document`、`WebSocket`、`require`、`Deno` 等）與錯誤的 `resolve` 回傳值會被標錯。
 
-官方 marketplace（catalog 名稱 `zoo`，模組鍵 `<id>@zoo`；0.5.0 前叫 `official`，`Marketplace::rename_official` 在啟動時把已安裝模組、設定與鑰匙圈帳號搬到新名稱）在獨立的 repo `zoosewu/zoo-downloader-marketplace`（`docs/architecture/official-marketplace-repo.md`），app 從 GitHub 讀、不打包。改模組在那個 repo：`pnpm build && pnpm catalog`、`pnpm check`，推上 `main` 就生效。開發版可設 `ZOO_OFFICIAL_MARKETPLACE=<本機 clone>` 讀本機。改了 SDK（新的 API level，見 `module-versions.md`）後在那邊 `pnpm sdk <commit>`。模組更新：啟動時檢查全部來源，模組開始解析下載時再檢查它的來源（最多每小時一次，`check_update_on_use`），都受「檢查模組更新」設定控制；有新版只顯示更新按鈕，不自動安裝。檔案不在的已安裝模組（舊版 app 原地執行的官方模組）在啟動時由 `restore_missing` 重新下載。
+官方 marketplace（catalog 名稱 `zoo`，模組鍵 `<id>@zoo`；0.5.0 前叫 `official`，0.5.0 的啟動搬移已在 0.6.0 移除）在獨立的 repo `zoosewu/zoo-downloader-marketplace`（`docs/architecture/official-marketplace-repo.md`），app 從 GitHub 讀、不打包。改模組在那個 repo：`pnpm build && pnpm catalog`、`pnpm check`，推上 `main` 就生效。開發版可設 `ZOO_OFFICIAL_MARKETPLACE=<本機 clone>` 讀本機。改了 SDK（新的 API level，見 `module-versions.md`）後在那邊 `pnpm sdk <commit>`。模組更新：啟動時檢查全部來源，模組開始解析下載時再檢查它的來源（最多每小時一次，`check_update_on_use`），都受「檢查模組更新」設定控制；有新版只顯示更新按鈕，不自動安裝。檔案不在的已安裝模組（舊版 app 原地執行的官方模組）在啟動時由 `restore_missing` 重新下載。
 
 ## 作品集（apex-code）
 

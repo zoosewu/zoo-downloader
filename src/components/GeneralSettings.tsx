@@ -1,94 +1,71 @@
-// General Settings Component - UI for general application settings
-import {
-  Box,
-  Button,
-  FormControl,
-  FormControlLabel,
-  FormHelperText,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  Switch,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+// Settings → General: language and theme, how the app runs on the computer, and app updates.
+import { IconButton, MenuItem, Select, Switch, Tooltip, Typography } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAtom, useAtomValue } from 'jotai';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { settingsAtom } from '../stores/settingsStore';
-import { backend, type AppSettings, type Theme } from '../backend';
-import { open } from '@tauri-apps/plugin-dialog';
+import { backend, type Theme } from '../backend';
 import AppUpdateSection from './AppUpdateSection';
-import BrowserExtensionSection from './BrowserExtensionSection';
-import Toast, { type ToastMessage } from './Toast';
+import { SectionedPanel, SettingRow, SettingsGroup } from './settings/layout';
+import { ChoiceField } from './settings/fields';
+import { settingsNoticeAtom, useUpdateSettings } from '../hooks/useUpdateSettings';
 import { applyLanguage, languagesAtom, loadUserLocales, localeProblemsAtom } from '../utils/languages';
+
+type Startup = 'off' | 'window' | 'tray';
 
 export default function GeneralSettings() {
   const { t } = useTranslation();
+  return (
+    <SectionedPanel
+      id="general"
+      sections={[
+        { id: 'appearance', label: t('settings.section.appearance'), content: <Appearance /> },
+        { id: 'system', label: t('settings.section.system'), content: <System /> },
+        { id: 'updates', label: t('update.title'), content: <Updates /> },
+      ]}
+    />
+  );
+}
+
+function Appearance() {
+  const { t } = useTranslation();
+  const settings = useAtomValue(settingsAtom);
+  const update = useUpdateSettings();
+  const notify = useSetAtom(settingsNoticeAtom);
   const languages = useAtomValue(languagesAtom);
   const localeProblems = useAtomValue(localeProblemsAtom);
-  const [saved, setGlobalSettings] = useAtom(settingsAtom);
-  // The form edits a draft of the app's settings (loaded at startup, replaced by every save);
-  // the backend is the only place they are written.
-  const [settings, setSettings] = useState<AppSettings>(saved);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<ToastMessage | null>(null);
 
-  async function handleSave() {
-    try {
-      setSaving(true);
-      const next = await backend.settings.update(settings);
-      setGlobalSettings(next);
-      setSettings(next);
-
-      await applyLanguage(next.language);
-
-      setMessage({ severity: 'success', text: t('settings.saveSuccess') || 'Settings saved successfully' });
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      setMessage({ severity: 'error', text: t('settings.errors.saveFailed') || 'Failed to save settings' });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleSelectPath() {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        defaultPath: settings.defaultDownloadDir,
-      });
-
-      if (selected && settings) {
-        setSettings({
-          ...settings,
-          defaultDownloadDir: selected as string,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to select directory:', error);
-    }
-  }
+  const setLanguage = async (language: string) => {
+    const next = await update({ language });
+    if (next) await applyLanguage(next.language);
+  };
 
   return (
-    <Box>
-      <Stack spacing={2.5}>
-        {/* Language */}
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-          <FormControl fullWidth error={localeProblems.length > 0}>
-            <InputLabel shrink>{t('settings.language')}</InputLabel>
+    <SettingsGroup>
+      <SettingRow
+        label={t('settings.language')}
+        description={
+          localeProblems.length > 0 &&
+          localeProblems.map((p) => (
+            <Typography key={p.file} variant="caption" color="error" component="div">
+              {t('settings.languageFileError', { file: p.file, message: p.message })}
+            </Typography>
+          ))
+        }
+        control={
+          <>
+            <Tooltip title={t('settings.languageFolder')}>
+              <IconButton size="small" onClick={() => backend.locales.openFolder().catch((e) => notify({ severity: 'error', text: e.message }))}>
+                <FolderOpenIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Select
+              size="small"
               value={settings.language}
-              label={t('settings.language')}
               displayEmpty
-              notched
+              sx={{ minWidth: 200 }}
               onOpen={() => loadUserLocales().catch((e) => console.error('Failed to load language files:', e.message))}
-              onChange={(e) => setSettings({ ...settings, language: e.target.value })}
+              onChange={(e) => setLanguage(e.target.value)}
             >
               <MenuItem value="">{t('settings.languageSystem')}</MenuItem>
               {languages.map((l) => (
@@ -101,186 +78,71 @@ export default function GeneralSettings() {
                 <MenuItem value={settings.language}>{settings.language}</MenuItem>
               )}
             </Select>
-            {localeProblems.map((p) => (
-              <FormHelperText key={p.file}>{t('settings.languageFileError', { file: p.file, message: p.message })}</FormHelperText>
-            ))}
-          </FormControl>
-          <Tooltip title={t('settings.languageFolder')}>
-            <IconButton sx={{ mt: 1 }} onClick={() => backend.locales.openFolder().catch((e) => setMessage({ severity: 'error', text: e.message }))}>
-              <FolderOpenIcon />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-
-        {/* Theme */}
-        <FormControl fullWidth>
-          <InputLabel>{t('settings.theme')}</InputLabel>
-          <Select
+          </>
+        }
+      />
+      <SettingRow
+        label={t('settings.theme')}
+        control={
+          <ChoiceField<Theme>
             value={settings.theme}
-            label={t('settings.theme')}
-            onChange={(e) => setSettings({ ...settings, theme: e.target.value as Theme })}
-          >
-            <MenuItem value="light">{t('settings.themeLight')}</MenuItem>
-            <MenuItem value="dark">{t('settings.themeDark')}</MenuItem>
-          </Select>
-        </FormControl>
-
-        {/* Download Path */}
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            {t('settings.downloadPath')}
-          </Typography>
-          <Stack direction="row" spacing={1}>
-            <TextField
-              fullWidth
-              value={settings.defaultDownloadDir}
-              slotProps={{ input: { readOnly: true } }}
-              size="small"
-            />
-            <Button variant="outlined" onClick={handleSelectPath}>
-              {t('settings.selectPath')}
-            </Button>
-          </Stack>
-        </Box>
-
-        {/* Max Concurrent Downloads */}
-        <TextField
-          fullWidth
-          type="number"
-          label={t('settings.maxConcurrent')}
-          value={settings.maxConcurrentDownloads ?? ''}
-          onChange={(e) => {
-            const value = e.target.value === '' ? null : parseInt(e.target.value);
-            setSettings({ ...settings, maxConcurrentDownloads: value });
-          }}
-          helperText={t('settings.maxConcurrentHelp') || 'Leave empty for unlimited'}
-        />
-
-        {/* Max Threads per Download */}
-        <TextField
-          fullWidth
-          type="number"
-          label={t('settings.maxThreads')}
-          value={settings.threadCount}
-          onChange={(e) => setSettings({ ...settings, threadCount: parseInt(e.target.value) || 8 })}
-          slotProps={{ htmlInput: { min: 1, max: 32 } }}
-        />
-
-        {/* UI Settings */}
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            {t('settings.uiSettings') || 'UI Settings'}
-          </Typography>
-          <Stack spacing={1}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.enableClipboardMonitoring}
-                  onChange={(e) =>
-                    setSettings({ ...settings, enableClipboardMonitoring: e.target.checked })
-                  }
-                />
-              }
-              label={t('settings.clipboardMonitor')}
-            />
-            <FormControlLabel
-              sx={{ pl: 4 }}
-              disabled={!settings.enableClipboardMonitoring}
-              control={
-                <Switch
-                  checked={settings.autoStartCopied}
-                  onChange={(e) => setSettings({ ...settings, autoStartCopied: e.target.checked })}
-                />
-              }
-              label={t('settings.autoStartCopied')}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.enableNotifications}
-                  onChange={(e) => setSettings({ ...settings, enableNotifications: e.target.checked })}
-                />
-              }
-              label={t('settings.notifications')}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.enableSystemTray}
-                  onChange={(e) => setSettings({ ...settings, enableSystemTray: e.target.checked })}
-                />
-              }
-              label={t('settings.systemTray')}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.launchAtStartup}
-                  onChange={(e) => setSettings({ ...settings, launchAtStartup: e.target.checked })}
-                />
-              }
-              label={t('settings.launchAtStartup')}
-            />
-            <FormControlLabel
-              sx={{ pl: 4 }}
-              disabled={!settings.launchAtStartup || !settings.enableSystemTray}
-              control={
-                <Switch
-                  checked={settings.startInTray && settings.enableSystemTray}
-                  onChange={(e) => setSettings({ ...settings, startInTray: e.target.checked })}
-                />
-              }
-              label={t('settings.startInTray')}
-            />
-          </Stack>
-        </Box>
-
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            {t('settings.extension.title')}
-          </Typography>
-          <FormControlLabel
-            sx={{ mb: 1, ml: 0 }}
-            control={
-              <Switch
-                checked={settings.autoStartBrowser}
-                onChange={(e) => setSettings({ ...settings, autoStartBrowser: e.target.checked })}
-              />
-            }
-            label={t('settings.autoStartBrowser')}
+            onChange={(theme) => update({ theme })}
+            options={[
+              { value: 'light', label: t('settings.themeLight') },
+              { value: 'dark', label: t('settings.themeDark') },
+            ]}
           />
-          <BrowserExtensionSection />
-        </Box>
+        }
+      />
+    </SettingsGroup>
+  );
+}
 
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            {t('update.title')}
-          </Typography>
-          <Stack spacing={1}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.checkAppUpdates}
-                  onChange={(e) => setSettings({ ...settings, checkAppUpdates: e.target.checked })}
-                />
-              }
-              label={t('update.automatic')}
-            />
-            <AppUpdateSection />
-          </Stack>
-        </Box>
+function System() {
+  const { t } = useTranslation();
+  const settings = useAtomValue(settingsAtom);
+  const update = useUpdateSettings();
+  const startup: Startup = !settings.launchAtStartup ? 'off' : settings.startInTray && settings.enableSystemTray ? 'tray' : 'window';
 
-        {/* Save Button */}
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-          <Button variant="outlined" onClick={() => setSettings(saved)} disabled={saving}>
-            {t('common.reset')}
-          </Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}>
-            {saving ? t('common.saving') || 'Saving...' : t('common.save')}
-          </Button>
-        </Box>
-      </Stack>
-      <Toast message={message} onClose={() => setMessage(null)} />
-    </Box>
+  return (
+    <SettingsGroup>
+      <SettingRow
+        label={t('settings.notifications')}
+        control={<Switch checked={settings.enableNotifications} onChange={(e) => update({ enableNotifications: e.target.checked })} />}
+      />
+      <SettingRow
+        label={t('settings.systemTray')}
+        control={<Switch checked={settings.enableSystemTray} onChange={(e) => update({ enableSystemTray: e.target.checked })} />}
+      />
+      <SettingRow
+        label={t('settings.startup.label')}
+        control={
+          <ChoiceField<Startup>
+            value={startup}
+            onChange={(next) => update({ launchAtStartup: next !== 'off', startInTray: next === 'tray' })}
+            options={[
+              { value: 'off', label: t('settings.startup.off') },
+              { value: 'window', label: t('settings.startup.window') },
+              { value: 'tray', label: t('settings.startup.tray'), disabled: !settings.enableSystemTray },
+            ]}
+          />
+        }
+      />
+    </SettingsGroup>
+  );
+}
+
+function Updates() {
+  const { t } = useTranslation();
+  const settings = useAtomValue(settingsAtom);
+  const update = useUpdateSettings();
+  return (
+    <SettingsGroup>
+      <SettingRow label={<AppUpdateSection />} />
+      <SettingRow
+        label={t('update.automatic')}
+        control={<Switch checked={settings.checkAppUpdates} onChange={(e) => update({ checkAppUpdates: e.target.checked })} />}
+      />
+    </SettingsGroup>
   );
 }
