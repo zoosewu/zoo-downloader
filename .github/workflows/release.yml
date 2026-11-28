@@ -125,5 +125,4 @@ jobs:
          "darwin-aarch64": "*_aarch64.app.tar.gz",
          "darwin-x86_64": "*_x64.app.tar.gz",
          "linux-x86_64": "*_amd64.AppImage"}
-      publish: false
     secrets: inherit

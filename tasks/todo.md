@@ -3,7 +3,7 @@
 依 https://github.com/zoosewu/zoo-release/blob/main/docs/ADOPTION.md
 
 - [x] A 發布：release.yml 改用 zoo-release `release.yml@v1`；建置保留在本專案（共用 `tauri-build.yml` 的 macOS 兩個架構更新檔同名、也不收 zoo-module CLI）；版本由 tag 寫入；`pnpm release` 的 commit 改 `chore(release)`；移除 `scripts/updater-json.mjs`
-- [ ] A6 測試 tag `v0.0.0-test.1`（`publish: false`），確認草稿後刪掉
+- [x] A6 測試：`v0.0.0-test.1` 的 Linux 打包失敗（預先發行版號，推測 RPM 不接受 `-`）；改用 `v0.0.1`（`publish: false`）四個平台與發布都成功，草稿待使用者確認後刪除
 - [x] B 更新：24 小時規則與啟動 1 分鐘後檢查、只在主版／次版提示、略過 `主.次`、狀態存設定檔
 - [x] B UI：主畫面上方橫幅（四種狀態）、設定最後一頁「關於」（版本、檢查更新、狀態、自動檢查、連結、作者的其他專案）、用詞照 UI.md
 - [x] C 授權：Cargo 的 license、README 商業授權段落、CONTRIBUTING.md、PR 範本、contributor-license workflow
