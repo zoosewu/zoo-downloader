@@ -19,7 +19,7 @@ export function useUpdateContent(state: UpdateState, { withSkip }: { withSkip: b
   const version = state.version ? `v${state.version}` : '';
   const page = version ? `${REPO_URL}/releases/tag/${version}` : `${REPO_URL}/releases/latest`;
   const link = (label: string) => (
-    <Button color="inherit" size="small" href={page} target="_blank" rel="noreferrer">
+    <Button variant="outlined" color="inherit" size="small" href={page} target="_blank" rel="noreferrer">
       {label}
     </Button>
   );
@@ -32,7 +32,7 @@ export function useUpdateContent(state: UpdateState, { withSkip }: { withSkip: b
           <>
             {link(t('update.notes'))}
             {withSkip && (
-              <Button color="inherit" size="small" onClick={() => skip(state.version)}>
+              <Button variant="outlined" color="inherit" size="small" onClick={() => skip(state.version)}>
                 {t('update.skip')}
               </Button>
             )}
@@ -53,7 +53,7 @@ export function useUpdateContent(state: UpdateState, { withSkip }: { withSkip: b
           </Box>
         ),
         actions: (
-          <Button color="inherit" size="small" onClick={cancel}>
+          <Button variant="outlined" color="inherit" size="small" onClick={cancel}>
             {t('update.cancel')}
           </Button>
         ),
@@ -100,9 +100,10 @@ const UpdateBanner: React.FC = () => {
   return (
     <Alert
       severity={state.kind === 'failed' ? 'error' : 'info'}
+      icon={false}
       role="status"
       action={
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {content.actions}
           {closable && (
             <Tooltip title={t('update.later')}>

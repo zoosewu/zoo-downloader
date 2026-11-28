@@ -1,7 +1,7 @@
 // Settings → About, the last tab (zoo-release docs/UI.md §2): the version and its update status,
 // "check for updates", automatic checks, links, and the author's other projects.
 import { useEffect, useState } from 'react';
-import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, CircularProgress, FormControlLabel, Link, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, ButtonBase, Checkbox, CircularProgress, Divider, FormControlLabel, Link, Paper, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import { settingsAtom } from '../stores/settingsStore';
@@ -24,7 +24,7 @@ export default function AboutSettings() {
 
   return (
     <Box>
-      <Paper variant="outlined" sx={{ p: 2.5, mb: 3 }}>
+      <Paper variant="outlined" sx={{ p: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="h6" component="h2">
@@ -70,9 +70,9 @@ export default function AboutSettings() {
             {t('about.license', { license: LICENSE })}
           </Link>
         </Stack>
-      </Paper>
 
-      <OtherProjects />
+        <OtherProjects />
+      </Paper>
     </Box>
   );
 }
@@ -80,6 +80,7 @@ export default function AboutSettings() {
 /** The update status line. */
 function Status() {
   const { t, i18n } = useTranslation();
+  const wide = /^(zh|ja)/.test(i18n.language);
   const state = useAtomValue(updateStateAtom);
   const lastCheck = useAtomValue(settingsAtom).updateLastCheck;
   const { checkNow } = useAppUpdate();
@@ -114,8 +115,8 @@ function Status() {
         <Typography variant="body2">
           {t('update.latest')}
           {lastCheck && (
-            <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-              {t('update.lastChecked', { time: formatCheckedAt(lastCheck, i18n.language) })}
+            <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: wide ? 0 : 0.5 }}>
+              {(wide ? '（' : '(') + t('update.lastChecked', { time: formatCheckedAt(lastCheck, i18n.language) }) + (wide ? '）' : ')')}
             </Typography>
           )}
         </Typography>
@@ -157,34 +158,41 @@ function OtherProjects() {
 
   if (!projects?.length) return null;
   return (
-    <Box>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+    <>
+      <Divider sx={{ my: 2.5 }} />
+      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
         {t('about.otherProjects')}
       </Typography>
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1.5 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1.5 }}>
         {projects.map((p) => {
           const cover = pick(p.screenshots?.[0]?.src);
           return (
-            <Card key={p.id} variant="outlined">
-              <CardActionArea href={p.links!.repo!} target="_blank" rel="noreferrer" sx={{ height: '100%' }}>
-                {cover ? (
-                  <CardMedia component="img" image={cover} alt="" loading="lazy" sx={{ aspectRatio: '16 / 10', objectFit: 'cover' }} />
-                ) : (
-                  <Box sx={{ aspectRatio: '16 / 10', bgcolor: 'action.hover' }} />
-                )}
-                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {p.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {pick(p.tagline)}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
+            <ButtonBase
+              key={p.id}
+              href={p.links!.repo!}
+              target="_blank"
+              rel="noreferrer"
+              sx={{ justifyContent: 'flex-start', gap: 1.5, p: 0.5, borderRadius: 1, textAlign: 'left', '&:hover': { bgcolor: 'action.hover' } }}
+            >
+              <Box
+                component={cover ? 'img' : 'span'}
+                src={cover || undefined}
+                alt=""
+                loading="lazy"
+                sx={{ width: 80, aspectRatio: '16 / 10', flexShrink: 0, borderRadius: 0.5, objectFit: 'cover', bgcolor: 'action.hover' }}
+              />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {p.name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {pick(p.tagline)}
+                </Typography>
+              </Box>
+            </ButtonBase>
           );
         })}
       </Box>
-    </Box>
+    </>
   );
 }
